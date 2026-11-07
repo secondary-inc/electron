@@ -1,22 +1,28 @@
 From: Iris <dev@2nd.inc>
-Subject: Use matching install-name tool with Apple linker
+Subject: Preserve Apple LINKEDIT alignment for shared libraries
 
-LLVM install-name rewriting packs odd indirect symbol tables on four-byte
-boundaries. Apple ld can reject the resulting framework's LINKEDIT string
-pool while linking helper executables. Preserve the selected Apple toolchain's
-layout when not using lld; LLVM-linked builds retain LLVM postprocessing.
+Use the selected Apple install-name tool for Apple-linked dylibs. Keep
+executable/generator link commands unchanged to avoid invalidating generated
+sources during incremental builds.
 
 diff --git a/build/toolchain/apple/toolchain.gni b/build/toolchain/apple/toolchain.gni
+index 50d501b45c..ae119f6dec 100644
 --- a/build/toolchain/apple/toolchain.gni
 +++ b/build/toolchain/apple/toolchain.gni
-@@ -235,6 +235,10 @@ template("apple_toolchain") {
-     # Specify an explicit path for the strip binary.
-     _strippath = "${prefix}llvm-strip"
-     _installnametoolpath = "${prefix}llvm-install-name-tool"
-+    if (!toolchain_uses_lld) {
-+      # Preserve Apple ld LINKEDIT alignment when rewriting dylib paths.
-+      _installnametoolpath = invoker.bin_path + "install_name_tool"
-+    }
-     linker_driver_args += " -Wcrl,strippath,${_strippath} -Wcrl,installnametoolpath,${_installnametoolpath}"
-     _enable_dsyms = enable_dsyms
-     _save_unstripped_output = save_unstripped_output
+@@ -636,7 +636,15 @@ template("single_apple_toolchain") {
+       link_command = "$linker_driver_env $linker_driver"
+       link_command += " -Wcrl,otoolpath,$otool -Wcrl,nmpath,$nm"
+       link_command += " -Wcrl,tocname,\"$tocname\""
+-      link_command += " $linker_driver_args -shared "
++      solink_driver_args = linker_driver_args
++      if (!toolchain_uses_lld) {
++        # Keep install-name rewriting compatible with the selected Apple linker.
++        # Scope this to dylibs: changing generator links invalidates their outputs.
++        solink_driver_args = string_replace(solink_driver_args,
++                                            _installnametoolpath,
++                                            invoker.bin_path + "install_name_tool")
++      }
++      link_command += " $solink_driver_args -shared "
+       if (toolchain_is_component_build) {
+         link_command += " -Wl,-install_name,@rpath/\"{{target_output_name}}{{output_extension}}\" "
+       }
