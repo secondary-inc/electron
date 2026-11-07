@@ -317,8 +317,14 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
 
     tabs::Tab tab;
     tab.id = contents->ID();
-    tab.title = base::UTF16ToUTF8(wc->GetTitle());
-    tab.url = wc->GetLastCommittedURL().spec();
+    // Query without a filter must enforce the same metadata permissions as
+    // tabs.get. Enumerating a tab does not grant access to its URL or title.
+    if (extension()->permissions_data()->HasAPIPermissionForTab(
+            contents->ID(), mojom::APIPermissionID::kTab) ||
+        extension()->permissions_data()->HasHostPermission(wc->GetURL())) {
+      tab.title = base::UTF16ToUTF8(wc->GetTitle());
+      tab.url = wc->GetLastCommittedURL().spec();
+    }
     tab.active = contents->IsFocused();
     tab.audible = contents->IsCurrentlyAudible();
     tab.muted_info = CreateMutedInfo(wc);

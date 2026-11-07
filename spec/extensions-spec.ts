@@ -1212,6 +1212,26 @@ describe('chrome extensions', () => {
         });
       });
 
+      describe('query metadata permissions', () => {
+        it('does not disclose URL or title when enumerating without permission', async () => {
+          const ses = session.fromPartition(`persist:${uuid.v4()}`);
+          await ses.extensions.loadExtension(
+            path.join(fixtures, 'extensions', 'chrome-tabs', 'no-privileges')
+          );
+          const target = new BrowserWindow({ show: false, webPreferences: { session: ses } });
+          await target.loadURL(url);
+          const reply = once(target.webContents, 'console-message');
+          await target.webContents.executeJavaScript(
+            `window.postMessage('${JSON.stringify({ method: 'query' })}', '*')`
+          );
+          const [{ message }] = await reply;
+          const tab = JSON.parse(message).find((tab: { id: number }) => tab.id === target.webContents.id);
+          expect(tab).to.have.property('id', target.webContents.id);
+          expect(tab).not.to.have.property('url');
+          expect(tab).not.to.have.property('title');
+        });
+      });
+
       describe('get', () => {
         afterEach(closeAllWindows);
         it('returns tab properties', async () => {

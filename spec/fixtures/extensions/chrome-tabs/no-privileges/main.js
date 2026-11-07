@@ -6,8 +6,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 window.addEventListener(
   'message',
-  () => {
-    chrome.runtime.sendMessage({}, (response) => {
+  (event) => {
+    chrome.runtime.sendMessage(JSON.parse(event.data), (response) => {
       console.log(JSON.stringify(response));
     });
   },
