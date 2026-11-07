@@ -1,4 +1,5 @@
 build_gn.patch
+fix_apple_install_name_linkedit_alignment.patch
 build_resolve_pgo_profiles_from_electron_state_files.patch
 accelerator.patch
 blink_local_frame.patch

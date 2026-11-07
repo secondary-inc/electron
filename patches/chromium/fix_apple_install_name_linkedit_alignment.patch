@@ -1,0 +1,22 @@
+From: Iris <dev@2nd.inc>
+Subject: Use matching install-name tool with Apple linker
+
+LLVM install-name rewriting packs odd indirect symbol tables on four-byte
+boundaries. Apple ld can reject the resulting framework's LINKEDIT string
+pool while linking helper executables. Preserve the selected Apple toolchain's
+layout when not using lld; LLVM-linked builds retain LLVM postprocessing.
+
+diff --git a/build/toolchain/apple/toolchain.gni b/build/toolchain/apple/toolchain.gni
+--- a/build/toolchain/apple/toolchain.gni
++++ b/build/toolchain/apple/toolchain.gni
+@@ -235,6 +235,10 @@ template("apple_toolchain") {
+     # Specify an explicit path for the strip binary.
+     _strippath = "${prefix}llvm-strip"
+     _installnametoolpath = "${prefix}llvm-install-name-tool"
++    if (!toolchain_uses_lld) {
++      # Preserve Apple ld LINKEDIT alignment when rewriting dylib paths.
++      _installnametoolpath = invoker.bin_path + "install_name_tool"
++    }
+     linker_driver_args += " -Wcrl,strippath,${_strippath} -Wcrl,installnametoolpath,${_installnametoolpath}"
+     _enable_dsyms = enable_dsyms
+     _save_unstripped_output = save_unstripped_output
