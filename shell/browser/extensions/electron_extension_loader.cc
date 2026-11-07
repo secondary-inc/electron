@@ -146,6 +146,11 @@ void ElectronExtensionLoader::FinishExtensionLoad(
   scoped_refptr<const Extension> extension = result.first;
   if (extension) {
     ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(browser_context_);
+    // Keep runtime permission checks in sync with the embedder's explicit load
+    // option. Every load defaults back to denied unless the caller opts in.
+    extension_prefs->SetAllowFileAccess(
+        extension->id(),
+        (extension->creation_flags() & Extension::ALLOW_FILE_ACCESS) != 0);
 
     if (BackgroundInfo::IsServiceWorkerBased(extension.get())) {
       // Tell Chromium that it needs to start the extension's service worker.
