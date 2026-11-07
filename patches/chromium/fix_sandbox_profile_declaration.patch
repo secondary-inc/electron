@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: fix: declare sandbox profile symbol omitted by newer macOS SDKs
+
+The macOS 27.2 SDK removes the declaration from sandbox.h while retaining
+the symbol in libsystem_sandbox.tbd. Keep linking the existing OS constant
+without changing sandbox policy or disabling sandbox compilation.
+
+diff --git a/sandbox/mac/seatbelt.cc b/sandbox/mac/seatbelt.cc
+--- a/sandbox/mac/seatbelt.cc
++++ b/sandbox/mac/seatbelt.cc
+@@ -14,6 +14,8 @@
+ 
+ extern "C" {
+ #include <sandbox.h>
++// Newer SDKs omit this declaration but libsystem_sandbox still exports it.
++extern const char kSBXProfilePureComputation[];
+ #if !IS_MAS_BUILD()
+ int sandbox_init_with_parameters(const char* profile,
+                                  uint64_t flags,

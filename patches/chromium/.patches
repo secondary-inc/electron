@@ -15,6 +15,7 @@ resource_file_conflict.patch
 scroll_bounce_flag.patch
 revert_oscrypt_remove_sync_backend.patch
 mas_avoid_private_macos_api_usage.patch.patch
+fix_sandbox_profile_declaration.patch
 add_didinstallconditionalfeatures.patch
 desktop_media_list.patch
 proxy_config_monitor.patch
