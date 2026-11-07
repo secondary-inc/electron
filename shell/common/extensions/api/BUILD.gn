@@ -40,6 +40,7 @@ generated_json_strings("generated_api_json_strings") {
     "action.json",
     "browser_action.json",
     "extension.json",
+    "permissions.json",
     "resources_private.idl",
     "tabs.json",
   ]
@@ -60,6 +61,7 @@ generated_json_strings("generated_api_json_strings") {
 
 generated_types("generated_api_types") {
   sources = [
+    "permissions.json",
     "resources_private.idl",
     "tabs.json",
   ]

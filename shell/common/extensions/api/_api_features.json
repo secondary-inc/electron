@@ -65,6 +65,11 @@
       "chrome://print/*"
     ]
   }],
+  "permissions": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "contexts": ["privileged_extension"]
+  },
   "tabs": {
     "channel": "stable",
     "extension_types": ["extension"],
