@@ -7,6 +7,7 @@
 #include <stddef.h>
 
 #include <utility>
+#include <string_view>
 
 #include "base/logging.h"
 #include "base/functional/bind.h"
@@ -274,7 +275,7 @@ ActionOpenPopupFunction::RunExtensionAction() {
 
 ExtensionFunction::ResponseAction
 ExtensionActionOpenPopupFunction::RunExtensionAction() {
-  if (name() == "browserAction.openPopup" && !user_gesture())
+  if (std::string_view(name()) == "browserAction.openPopup" && !user_gesture())
     return RespondNow(Error("Legacy popup opening requires a user gesture"));
   auto* tab = GetActiveElectronTab(browser_context());
   if (!tab || ElectronBrowserTabWindowId(tab->web_contents()) < 0)
