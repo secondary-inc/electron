@@ -688,6 +688,8 @@ ExtensionFunction::ResponseAction TabsRemoveFunction::Run() {
   if (args()[0].is_int()) ids.push_back(args()[0].GetInt());
   else {
     EXTENSION_FUNCTION_VALIDATE(args()[0].is_list());
+    if (args()[0].GetList().size() > 100)
+      return RespondNow(Error("Remove between one and 100 browser tabs"));
     for (const auto& value : args()[0].GetList()) {
       EXTENSION_FUNCTION_VALIDATE(value.is_int());
       if (std::find(ids.begin(), ids.end(), value.GetInt()) == ids.end())
