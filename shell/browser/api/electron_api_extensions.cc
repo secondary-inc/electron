@@ -5,6 +5,8 @@
 #include "shell/browser/api/electron_api_extensions.h"
 #include <algorithm>
 #include <set>
+#include "content/public/browser/render_frame_host.h"
+#include "extensions/browser/extension_api_frame_id_map.h"
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
 #include "extensions/browser/permissions/permissions_updater.h"
 #include "extensions/browser/extension_prefs.h"
@@ -42,6 +44,21 @@
 #include "v8/include/cppgc/allocation.h"
 
 namespace electron::api {
+namespace {
+content::RenderFrameHost* ContextMenuFrame(content::WebContents* contents, const base::DictValue& details) {
+  auto* frame = contents->GetPrimaryMainFrame();
+  if (details.contains("frameProcessId") || details.contains("frameRoutingId")) {
+    const auto process = details.FindInt("frameProcessId");
+    const auto routing = details.FindInt("frameRoutingId");
+    if (!process || !routing) return nullptr;
+    frame = content::RenderFrameHost::FromID(*process, *routing);
+  }
+  if (!frame || !frame->IsActive() ||
+      frame->GetOutermostMainFrame() != contents->GetPrimaryMainFrame() ||
+      !frame->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) return nullptr;
+  return frame;
+}
+}
 
 const gin::WrapperInfo Extensions::kWrapperInfo =
     electron::MakeWrapperInfo(electron::kElectronExtensions);
@@ -176,13 +193,18 @@ base::DictValue Extensions::GetContextMenuState(
   }
   const auto& url = tab->web_contents()->GetLastCommittedURL();
   if (!url.SchemeIsHTTPOrHTTPS()) return {};
+  auto* frame = ContextMenuFrame(tab->web_contents(), details);
+  if (!frame) return {};
   details.Set("pageUrl", url.spec());
+  details.Set("frameUrl", frame->GetLastCommittedURL().spec());
+  details.Set("isSubframe", frame != tab->web_contents()->GetPrimaryMainFrame());
   auto state = extensions::ReadWorkContextMenus(browser_context(), extension_id);
   base::DictValue filtered;
   for (const auto [key, item] : *state.FindDict("items"))
     if (item.is_dict() && extensions::WorkContextMenuMatches(item.GetDict(), details))
       filtered.Set(key, item.Clone());
   state.Set("items", std::move(filtered));
+  state.Set("frameDocumentId", extensions::ExtensionApiFrameIdMap::GetDocumentId(frame).ToString());
   return state;
 }
 
@@ -211,11 +233,19 @@ void Extensions::ClickContextMenu(
   const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
                               ->enabled_extensions().GetByID(extension_id);
   auto* contents = tab->web_contents();
+  auto* frame = ContextMenuFrame(contents, details);
+  const auto* document = details.FindString("frameDocumentId");
+  if (!frame || ((document || frame != contents->GetPrimaryMainFrame()) &&
+      (!document || *document != extensions::ExtensionApiFrameIdMap::GetDocumentId(frame).ToString()))) {
+    thrower.ThrowError("Context menu frame changed");
+    return;
+  }
   base::DictValue info;
   info.Set("menuItemId", item->Find("id")->Clone());
   if (const auto* parent = item->Find("parentId")) info.Set("parentMenuItemId", parent->Clone());
   info.Set("pageUrl", contents->GetLastCommittedURL().spec());
-  info.Set("frameId", 0);
+  info.Set("frameId", extensions::ExtensionApiFrameIdMap::GetFrameId(frame));
+  if (frame != contents->GetPrimaryMainFrame()) info.Set("frameUrl", frame->GetLastCommittedURL().spec());
   info.Set("editable", details.FindBool("editable").value_or(false));
   for (const auto* field : {"linkUrl", "srcUrl", "selectionText", "mediaType"})
     if (const auto* value = details.FindString(field); value && !value->empty() && value->size() <= 8192)

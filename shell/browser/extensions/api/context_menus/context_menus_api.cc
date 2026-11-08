@@ -46,10 +46,10 @@ std::string Validate(base::DictValue& item, const base::DictValue& items, const 
     if (!contexts->is_list() || contexts->GetList().empty() || contexts->GetList().size() > 10)
       return "Invalid menu contexts";
     for (const auto& c : contexts->GetList())
-      if (!c.is_string() || (c.GetString() != "all" && c.GetString() != "page" &&
+      if (!c.is_string() || (c.GetString() != "all" && c.GetString() != "page" && c.GetString() != "frame" &&
           c.GetString() != "selection" && c.GetString() != "link" && c.GetString() != "editable" &&
           c.GetString() != "image" && c.GetString() != "audio" && c.GetString() != "video"))
-        return "Only main-document website contexts are supported";
+        return "Only website contexts are supported";
   } else {
     item.Set("contexts", base::ListValue().Append("page"));
   }
@@ -150,6 +150,7 @@ bool WorkContextMenuMatches(const base::DictValue& item, const base::DictValue& 
     const auto media = text("mediaType");
     const auto* targets = item.FindList("targetUrlPatterns");
     matched |= context == "all" ||
+        (context == "frame" && details.FindBool("isSubframe").value_or(false)) ||
         (context == "page" && !has_link && !has_selection && !editable &&
          (media.empty() || media == "none")) ||
         (context == "selection" && has_selection) ||
@@ -158,7 +159,7 @@ bool WorkContextMenuMatches(const base::DictValue& item, const base::DictValue& 
         ((context == "image" || context == "audio" || context == "video") &&
          context == media && MatchesPatterns(targets, text("srcUrl")));
   }
-  return matched && MatchesPatterns(item.FindList("documentUrlPatterns"), text("pageUrl"));
+  return matched && MatchesPatterns(item.FindList("documentUrlPatterns"), text("frameUrl").empty() ? text("pageUrl") : text("frameUrl"));
 }
 ExtensionFunction::ResponseAction ContextMenusCreateFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(!args().empty() && args()[0].is_dict());
