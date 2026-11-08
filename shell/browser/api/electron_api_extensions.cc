@@ -146,6 +146,8 @@ base::DictValue Extensions::GetActionState(gin_helper::ErrorThrower thrower,
       .Set("title", action->GetTitle(tab_id))
       .Set("popup", action->GetPopupUrl(tab_id).spec())
       .Set("badgeText", action->GetDisplayBadgeText(tab_id))
+      .Set("badgeBackgroundColor", static_cast<double>(action->GetBadgeBackgroundColor(tab_id)))
+      .Set("badgeTextColor", static_cast<double>(action->GetBadgeTextColor(tab_id)))
       .Set("enabled", action->GetIsVisibleIgnoringDeclarative(tab_id));
 }
 void Extensions::OnExtensionActionUpdated(extensions::ExtensionAction* action,

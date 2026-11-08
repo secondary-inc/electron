@@ -239,10 +239,8 @@ ExtensionActionGetBadgeBackgroundColorFunction::RunExtensionAction() {
 
 ExtensionFunction::ResponseAction
 ActionGetBadgeTextColorFunction::RunExtensionAction() {
-  LOG(INFO) << "chrome.action.getBadgeTextColor is not supported in Electron";
-
-  base::ListValue list;
-  return RespondNow(WithArguments(std::move(list)));
+  return RespondNow(WithArguments(
+      ActionColorValues(action_->GetBadgeTextColor(tab_id_))));
 }
 
 ActionGetUserSettingsFunction::ActionGetUserSettingsFunction() = default;
