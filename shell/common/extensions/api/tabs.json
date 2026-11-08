@@ -273,6 +273,15 @@
         }
       },
       {
+        "name": "remove",
+        "type": "function",
+        "parameters": [{"name":"tabIds","choices":[
+          {"type":"integer","minimum":0},
+          {"type":"array","items":{"type":"integer","minimum":0}}
+        ]}],
+        "returns_async":{"name":"callback","optional":true,"parameters":[]}
+      },
+      {
         "name": "create",
         "type": "function",
         "parameters": [{"name":"createProperties","type":"object","properties":{

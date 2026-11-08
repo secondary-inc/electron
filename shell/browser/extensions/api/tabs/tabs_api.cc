@@ -4,6 +4,7 @@
 
 #include "shell/browser/extensions/api/tabs/tabs_api.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -680,6 +681,51 @@ base::expected<GURL, std::string> PrepareURLForNavigation(
 }
 
 }  // namespace
+
+ExtensionFunction::ResponseAction TabsRemoveFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().size() == 1);
+  std::vector<int> ids;
+  if (args()[0].is_int()) ids.push_back(args()[0].GetInt());
+  else {
+    EXTENSION_FUNCTION_VALIDATE(args()[0].is_list());
+    for (const auto& value : args()[0].GetList()) {
+      EXTENSION_FUNCTION_VALIDATE(value.is_int());
+      if (std::find(ids.begin(), ids.end(), value.GetInt()) == ids.end())
+        ids.push_back(value.GetInt());
+    }
+  }
+  if (ids.empty() || ids.size() > 100)
+    return RespondNow(Error("Remove between one and 100 browser tabs"));
+  auto* selected = GetActiveElectronTab(browser_context());
+  if (!selected || ElectronBrowserTabWindowId(selected->web_contents()) < 0)
+    return RespondNow(Error("No selected browser tab in this profile"));
+  const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
+  for (int id : ids) {
+    auto* target = GetElectronTabById(id, browser_context());
+    if (!target || ElectronBrowserTabWindowId(target->web_contents()) != window_id ||
+        !target->owner_window() || target->owner_window()->base_window_id() != window_id)
+      return RespondNow(Error("No such browser tab in the selected profile window"));
+  }
+  using Pending = base::RefCountedData<base::OnceCallback<void(bool)>>;
+  auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
+      [](scoped_refptr<TabsRemoveFunction> function, std::vector<int> ids, bool closed) {
+        auto* context = function->browser_context();
+        if (closed && context) {
+          for (int id : ids) if (GetElectronTabById(id, context)) closed = false;
+        } else closed = false;
+        function->Respond(closed ? function->NoArguments()
+                                 : function->Error("The browser could not close all requested tabs"));
+      }, scoped_refptr<TabsRemoveFunction>(this), ids));
+  auto reply = base::BindRepeating([](scoped_refptr<Pending> pending, bool closed) {
+    if (pending->data) std::move(pending->data).Run(closed);
+  }, pending);
+  if (!selected->Emit("browser-tabs-remove", extension()->id(), ids, reply))
+    reply.Run(false);
+  if (pending->data)
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(reply, false), base::Seconds(15));
+  return did_respond() ? AlreadyResponded() : RespondLater();
+}
 
 ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   auto params = tabs::Create::Params::Create(args());
