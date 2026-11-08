@@ -303,6 +303,15 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
         continue;
     }
 
+    if (!MatchesBool(params->query_info.pinned, IsElectronBrowserTabPinned(wc)))
+      continue;
+    if (!MatchesBool(params->query_info.highlighted, IsElectronBrowserTabActive(contents)))
+      continue;
+    if (params->query_info.status != tabs::TabStatus::kNone &&
+        params->query_info.status != (wc->IsLoading() ? tabs::TabStatus::kLoading :
+                                                       tabs::TabStatus::kComplete))
+      continue;
+
     // Match webContents audible value.
     if (!MatchesBool(audible, wc->IsCurrentlyAudible()))
       continue;
@@ -341,6 +350,13 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
       tab.url = committed_url.spec();
     }
     tab.active = IsElectronBrowserTabActive(contents);
+    tab.selected = tab.active;
+    tab.highlighted = tab.active;
+    tab.pinned = IsElectronBrowserTabPinned(wc);
+    tab.incognito = wc->GetBrowserContext()->IsOffTheRecord();
+    tab.group_id = -1;
+    tab.status = wc->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
+    tab.last_accessed = wc->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
     if (const int window_id = ElectronBrowserTabWindowId(wc); window_id >= 0) {
       tab.window_id = window_id;
       tab.index = ElectronBrowserTabIndex(wc);
@@ -376,6 +392,12 @@ ExtensionFunction::ResponseAction TabsGetFunction::Run() {
   }
 
   tab.active = IsElectronBrowserTabActive(contents);
+  tab.selected = tab.active;
+  tab.highlighted = tab.active;
+  tab.pinned = IsElectronBrowserTabPinned(wc);
+  tab.incognito = wc->GetBrowserContext()->IsOffTheRecord();
+  tab.group_id = -1;
+  tab.status = wc->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
   if (const int window_id = ElectronBrowserTabWindowId(wc); window_id >= 0) {
     tab.window_id = window_id;
     tab.index = ElectronBrowserTabIndex(wc);
@@ -734,6 +756,13 @@ ExtensionFunction::ResponseValue TabsUpdateFunction::GetResult() {
     tab.window_id = window_id;
     tab.index = ElectronBrowserTabIndex(web_contents_);
   }
+  tab.selected = tab.active;
+  tab.highlighted = tab.active;
+  tab.pinned = IsElectronBrowserTabPinned(web_contents_);
+  tab.incognito = web_contents_->GetBrowserContext()->IsOffTheRecord();
+  tab.group_id = -1;
+  tab.status = web_contents_->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
+  tab.last_accessed = web_contents_->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
   tab.muted_info = CreateMutedInfo(web_contents_);
   tab.audible = web_contents_->IsCurrentlyAudible();
   // TODO: Add proper support for split views

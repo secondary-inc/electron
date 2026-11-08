@@ -18,8 +18,9 @@ namespace extensions {
 
 // Main-process managed tab identity is independent of transient keyboard focus.
 void SetElectronBrowserTabState(content::WebContents* contents, bool active,
-                                int window_id, int index);
+                                int window_id, int index, bool pinned);
 bool IsElectronBrowserTab(content::WebContents* contents);
+bool IsElectronBrowserTabPinned(content::WebContents* contents);
 bool IsElectronBrowserTabActive(electron::api::WebContents* contents);
 int ElectronBrowserTabWindowId(content::WebContents* contents);
 int ElectronBrowserTabIndex(content::WebContents* contents);

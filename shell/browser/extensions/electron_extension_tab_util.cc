@@ -15,6 +15,7 @@ const char kManagedBrowserContext[] = "iris-managed-browser-context";
 const char kBrowserTabState[] = "iris-browser-tab-state";
 struct BrowserTabState : public base::SupportsUserData::Data {
   bool active = false;
+  bool pinned = false;
   int window_id = -1;
   int index = -1;
 };
@@ -24,14 +25,19 @@ BrowserTabState* State(content::WebContents* contents) {
 }  // namespace
 
 void SetElectronBrowserTabState(content::WebContents* contents, bool active,
-                                int window_id, int index) {
+                                int window_id, int index, bool pinned) {
   auto state = std::make_unique<BrowserTabState>();
   state->active = active;
+  state->pinned = pinned;
   state->window_id = window_id;
   state->index = index;
   contents->SetUserData(kBrowserTabState, std::move(state));
   contents->GetBrowserContext()->SetUserData(
       kManagedBrowserContext, std::make_unique<BrowserTabState>());
+}
+bool IsElectronBrowserTabPinned(content::WebContents* contents) {
+  auto* state = State(contents);
+  return state && state->pinned;
 }
 bool IsElectronBrowserTab(content::WebContents* contents) {
   return State(contents) ||

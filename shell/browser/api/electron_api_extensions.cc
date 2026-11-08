@@ -179,6 +179,7 @@ void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
   extensions::api::tabs::Tab value;
   value.id = tab_id;
   value.active = true;
+  value.pinned = extensions::IsElectronBrowserTabPinned(contents);
   value.selected = true;
   value.highlighted = true;
   value.window_id = extensions::ElectronBrowserTabWindowId(contents);
