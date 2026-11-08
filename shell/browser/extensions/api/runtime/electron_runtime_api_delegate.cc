@@ -17,7 +17,7 @@
 #include "extensions/common/manifest_handlers/options_page_info.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/extensions/electron_extension_tab_util.h"
-#include "shell/common/gin_helper/callback.h"
+#include "shell/common/gin_converters/callback_converter.h"
 #include "components/update_client/update_query_params.h"
 #include "extensions/common/api/runtime.h"
 #include "shell/browser/extensions/electron_extension_system.h"
