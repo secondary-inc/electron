@@ -296,9 +296,9 @@ ActionOpenPopupFunction::RunExtensionAction() {
   auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
       [](scoped_refptr<ActionOpenPopupFunction> function, bool success) {
         if (success)
-          function->Respond(NoArguments());
+          function->Respond(function->NoArguments());
         else
-          function->Respond(Error("Failed to open popup."));
+          function->Respond(function->Error("Failed to open popup."));
       },
       scoped_refptr<ActionOpenPopupFunction>(this)));
   auto respond = base::BindRepeating(
