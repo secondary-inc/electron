@@ -84,6 +84,7 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
         events::TABS_ON_ZOOM_CHANGE, "tabs.onZoomChange", std::move(args),
         web_contents()->GetBrowserContext()));
   }
+  const std::string& favicon() const { return favicon_; }
   void DidStartLoading() override { Updated(); }
   void DidStopLoading() override { Updated(); }
   void TitleWasSet(content::NavigationEntry*) override { Updated(); }
@@ -235,6 +236,10 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
           contents->GetBrowserContext()));
     }
   }
+}
+std::string ElectronBrowserTabFavicon(content::WebContents* contents) {
+  const auto* observer = static_cast<BrowserTabFrames*>(contents->GetUserData(kBrowserTabFrames));
+  return observer ? observer->favicon() : std::string();
 }
 bool IsElectronBrowserTabPinned(content::WebContents* contents) {
   auto* state = State(contents);

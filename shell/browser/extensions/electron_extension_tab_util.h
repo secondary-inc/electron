@@ -5,6 +5,8 @@
 #ifndef ELECTRON_SHELL_BROWSER_EXTENSIONS_ELECTRON_EXTENSION_TAB_UTIL_H_
 #define ELECTRON_SHELL_BROWSER_EXTENSIONS_ELECTRON_EXTENSION_TAB_UTIL_H_
 
+#include <string>
+
 namespace content {
 class BrowserContext;
 class WebContents;
@@ -24,6 +26,7 @@ bool IsElectronBrowserTabPinned(content::WebContents* contents);
 bool IsElectronBrowserTabActive(electron::api::WebContents* contents);
 int ElectronBrowserTabWindowId(content::WebContents* contents);
 int ElectronBrowserTabIndex(content::WebContents* contents);
+std::string ElectronBrowserTabFavicon(content::WebContents* contents);
 
 // Returns the unique selected tab in this profile; ambiguity fails closed.
 electron::api::WebContents* GetActiveElectronTab(content::BrowserContext* browser_context);

@@ -373,6 +373,7 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
     if (has_privileged_access) {
       tab.title = base::UTF16ToUTF8(wc->GetTitle());
       tab.url = committed_url.spec();
+      if (auto icon = ElectronBrowserTabFavicon(wc); !icon.empty()) tab.fav_icon_url = std::move(icon);
     }
     tab.active = IsElectronBrowserTabActive(contents);
     tab.selected = tab.active;
@@ -414,6 +415,7 @@ ExtensionFunction::ResponseAction TabsGetFunction::Run() {
                                    wc->GetLastCommittedURL())) {
     tab.url = wc->GetLastCommittedURL().spec();
     tab.title = base::UTF16ToUTF8(wc->GetTitle());
+    if (auto icon = ElectronBrowserTabFavicon(wc); !icon.empty()) tab.fav_icon_url = std::move(icon);
   }
 
   tab.active = IsElectronBrowserTabActive(contents);
@@ -785,6 +787,7 @@ ExtensionFunction::ResponseValue TabsUpdateFunction::GetResult() {
           web_contents_->GetLastCommittedURL())) {
     tab.url = web_contents_->GetLastCommittedURL().spec();
     tab.title = base::UTF16ToUTF8(web_contents_->GetTitle());
+    if (auto icon = ElectronBrowserTabFavicon(web_contents_); !icon.empty()) tab.fav_icon_url = std::move(icon);
   }
 
   if (api_web_contents)
