@@ -24,7 +24,7 @@ bool PatternsValid(const base::Value* value) {
   return true;
 }
 bool MatchesPatterns(const base::ListValue* patterns, const std::string& url) {
-  if (!patterns) return true;
+  if (!patterns || patterns->empty()) return true;
   for (const auto& v : *patterns) {
     URLPattern p(URLPattern::SCHEME_HTTP | URLPattern::SCHEME_HTTPS);
     if (v.is_string() && p.Parse(v.GetString()) == URLPattern::ParseResult::kSuccess && p.MatchesURL(GURL(url))) return true;
@@ -116,16 +116,21 @@ bool WorkContextMenuMatches(const base::DictValue& item, const base::DictValue& 
   if (contexts) for (const auto& c : *contexts) {
     if (!c.is_string()) continue;
     const auto& context = c.GetString();
-    matched |= context == "all" || context == "page" ||
-        (context == "selection" && !text("selectionText").empty()) ||
-        (context == "link" && !text("linkUrl").empty()) ||
-        (context == "editable" && details.FindBool("editable").value_or(false)) ||
-        ((context == "image" || context == "audio" || context == "video") && context == text("mediaType"));
+    const bool has_link = !text("linkUrl").empty();
+    const bool has_selection = !text("selectionText").empty();
+    const bool editable = details.FindBool("editable").value_or(false);
+    const auto media = text("mediaType");
+    const auto* targets = item.FindList("targetUrlPatterns");
+    matched |= context == "all" ||
+        (context == "page" && !has_link && !has_selection && !editable &&
+         (media.empty() || media == "none")) ||
+        (context == "selection" && has_selection) ||
+        (context == "link" && has_link && MatchesPatterns(targets, text("linkUrl"))) ||
+        (context == "editable" && editable) ||
+        ((context == "image" || context == "audio" || context == "video") &&
+         context == media && MatchesPatterns(targets, text("srcUrl")));
   }
-  return matched && MatchesPatterns(item.FindList("documentUrlPatterns"), text("pageUrl")) &&
-      (!item.FindList("targetUrlPatterns") ||
-       MatchesPatterns(item.FindList("targetUrlPatterns"), text("linkUrl")) ||
-       MatchesPatterns(item.FindList("targetUrlPatterns"), text("srcUrl")));
+  return matched && MatchesPatterns(item.FindList("documentUrlPatterns"), text("pageUrl"));
 }
 ExtensionFunction::ResponseAction ContextMenusCreateFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(!args().empty() && args()[0].is_dict());
