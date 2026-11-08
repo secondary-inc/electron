@@ -5,6 +5,7 @@
 #include "shell/browser/api/electron_api_extensions.h"
 #include <algorithm>
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
+#include "extensions/browser/permissions/permissions_updater.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "shell/browser/extensions/api/permissions/permissions_api_helpers.h"
@@ -109,6 +110,44 @@ v8::Local<v8::Promise> Extensions::LoadExtension(
           },
           std::move(promise)));
 
+  return handle;
+}
+
+v8::Local<v8::Promise> Extensions::RevokeOptionalPermissions(
+    v8::Isolate* isolate, const std::string& extension_id) {
+  gin_helper::Promise<void> promise(isolate);
+  auto handle = promise.GetHandle();
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  if (!extension) {
+    promise.RejectWithErrorMessage("Enabled extension not found in this profile");
+    return handle;
+  }
+  const auto optional = extensions::PermissionSet::CreateDifference(
+      extensions::PermissionsParser::GetOptionalPermissions(extension),
+      extensions::PermissionsParser::GetRequiredPermissions(extension));
+  auto changed = extensions::PermissionSet::CreateIntersection(
+      *optional, extension->permissions_data()->active_permissions());
+  base::ListValue args;
+  args.Append(extensions::permissions_api_helpers::PackPermissionSet(*changed)->ToValue());
+  const bool notify = !changed->IsEmpty();
+  // Hard removal also forgets inactive optional grants remembered by soft removal.
+  extensions::PermissionsUpdater(browser_context()).RevokeOptionalPermissions(
+      *extension, *optional, extensions::PermissionsUpdater::RemoveType::kHard,
+      base::BindOnce([](gin_helper::Promise<void> promise,
+                        content::BrowserContext* context,
+                        scoped_refptr<const extensions::Extension> extension,
+                        base::ListValue args, bool notify) {
+        if (notify && extensions::ExtensionRegistry::Get(context)
+                          ->enabled_extensions().GetByID(extension->id()) == extension.get()) {
+          extensions::EventRouter::Get(context)->DispatchEventToExtension(
+              extension->id(), std::make_unique<extensions::Event>(
+                  extensions::events::PERMISSIONS_ON_REMOVED, "permissions.onRemoved",
+                  std::move(args), context));
+        }
+        promise.Resolve();
+      }, std::move(promise), browser_context(),
+      scoped_refptr<const extensions::Extension>(extension), std::move(args), notify));
   return handle;
 }
 
@@ -353,6 +392,7 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("removeExtension", &Extensions::RemoveExtension)
       .SetMethod("clearPermissionGrants", &Extensions::ClearPermissionGrants)
       .SetMethod("getPermissionState", &Extensions::GetPermissionState)
+      .SetMethod("revokeOptionalPermissions", &Extensions::RevokeOptionalPermissions)
       .SetMethod("getExtension", &Extensions::GetExtension)
       .SetMethod("getAllExtensions", &Extensions::GetAllExtensions)
       .SetMethod("getActionState", &Extensions::GetActionState)
