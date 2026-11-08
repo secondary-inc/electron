@@ -16,6 +16,7 @@
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/extensions/electron_extension_tab_util.h"
 #include "shell/common/gin_converters/callback_converter.h"
+#include "shell/common/gin_converters/value_converter.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
