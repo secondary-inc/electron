@@ -101,7 +101,7 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
     if (!navigation->IsSameDocument()) favicon_.clear();
     Updated();
   }
-  void Updated() {
+  void Updated(bool created = false) {
     auto* wc = web_contents();
     if (!wc || !wc->GetUserData(kBrowserTabState)) return;
     auto* contents = electron::api::WebContents::From(wc);
@@ -126,13 +126,14 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
     last_url_ = url.spec();
     if (!loading) last_title_ = title;
     loading_ = loading; muted_ = muted; audible_ = audible; pinned_ = pinned;
-    if (changes.empty()) return;
+    if (!created && changes.empty()) return;
     auto* context = wc->GetBrowserContext();
     auto* router = EventRouter::Get(context);
     auto* registry = ExtensionRegistry::Get(context);
     if (!router || !registry) return;
     for (const auto& extension : registry->enabled_extensions()) {
-      if (!router->ExtensionHasEventListener(extension->id(), "tabs.onUpdated")) continue;
+      const char* event_name = created ? "tabs.onCreated" : "tabs.onUpdated";
+      if (!router->ExtensionHasEventListener(extension->id(), event_name)) continue;
       const auto* permissions = extension->permissions_data();
       // This observer can run before ActiveTabPermissionGranter revokes a
       // previous origin. A tab-scoped API grant alone is not sufficient.
@@ -142,7 +143,7 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
            permissions->GetPageAccess(url, contents->ID(), nullptr) == PermissionsData::PageAccess::kAllowed);
       auto change = changes.Clone();
       if (!privileged) { change.Remove("url"); change.Remove("title"); change.Remove("favIconUrl"); }
-      if (change.empty()) continue;
+      if (!created && change.empty()) continue;
       api::tabs::Tab tab;
       tab.id = contents->ID();
       tab.window_id = ElectronBrowserTabWindowId(wc);
@@ -164,11 +165,14 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
         if (!loading) tab.title = title;
       }
       base::ListValue args;
-      args.Append(contents->ID());
-      args.Append(std::move(change));
+      if (!created) {
+        args.Append(contents->ID());
+        args.Append(std::move(change));
+      }
       args.Append(tab.ToValue());
       router->DispatchEventToExtension(extension->id(), std::make_unique<Event>(
-          events::TABS_ON_UPDATED, "tabs.onUpdated", std::move(args), context));
+          created ? events::TABS_ON_CREATED : events::TABS_ON_UPDATED,
+          event_name, std::move(args), context));
     }
   }
   void RenderFrameCreated(content::RenderFrameHost* frame) override {
@@ -212,6 +216,7 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
   if (!contents->GetUserData(kBrowserTabFrames))
     contents->SetUserData(kBrowserTabFrames, std::make_unique<BrowserTabFrames>(contents));
   const auto* previous = State(contents);
+  const bool created = !previous;
   const bool activated = active && (!previous || !previous->active || previous->window_id != window_id);
   auto state = std::make_unique<BrowserTabState>();
   state->active = active;
@@ -221,7 +226,7 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
   contents->SetUserData(kBrowserTabState, std::move(state));
   contents->GetBrowserContext()->SetUserData(
       kManagedBrowserContext, std::make_unique<BrowserTabState>());
-  static_cast<BrowserTabFrames*>(contents->GetUserData(kBrowserTabFrames))->Updated();
+  static_cast<BrowserTabFrames*>(contents->GetUserData(kBrowserTabFrames))->Updated(created);
   if (activated && window_id >= 0) {
     auto* tab = electron::api::WebContents::From(contents);
     auto* router = EventRouter::Get(contents->GetBrowserContext());
