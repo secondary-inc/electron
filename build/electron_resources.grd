@@ -192,6 +192,9 @@
     </messages>
     <includes>
       <include name="IDR_CONTENT_SHELL_DEVTOOLS_DISCOVERY_PAGE" file="${target_gen_dir}/shell_devtools_discovery_page.html" use_base_dir="false" type="BINDATA" />
+      <include name="IDR_IRIS_ACTION_BINDINGS" file="../../chrome/renderer/resources/extensions/action_custom_bindings.js" type="BINDATA" />
+      <include name="IDR_IRIS_BROWSER_ACTION_BINDINGS" file="../../chrome/renderer/resources/extensions/browser_action_custom_bindings.js" type="BINDATA" />
+      <include name="IDR_IRIS_PAGE_ACTION_BINDINGS" file="../../chrome/renderer/resources/extensions/page_action_custom_bindings.js" type="BINDATA" />
     </includes>
   </release>
 </grit>
