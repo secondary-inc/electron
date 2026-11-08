@@ -7,6 +7,7 @@
 
 namespace content {
 class BrowserContext;
+class WebContents;
 }  // namespace content
 
 namespace electron::api {
@@ -14,6 +15,14 @@ class WebContents;
 }  // namespace electron::api
 
 namespace extensions {
+
+// Main-process managed tab identity is independent of transient keyboard focus.
+void SetElectronBrowserTabState(content::WebContents* contents, bool active,
+                                int window_id, int index);
+bool IsElectronBrowserTab(content::WebContents* contents);
+bool IsElectronBrowserTabActive(electron::api::WebContents* contents);
+int ElectronBrowserTabWindowId(content::WebContents* contents);
+int ElectronBrowserTabIndex(content::WebContents* contents);
 
 // Resolves |tab_id| to an electron::api::WebContents only if the underlying
 // WebContents belongs to |browser_context|. Tabs in other BrowserContexts are

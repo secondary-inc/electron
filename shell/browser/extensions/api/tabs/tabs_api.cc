@@ -284,7 +284,8 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
   auto* bc = browser_context();
   auto all_contents = electron::api::WebContents::GetWebContentsList();
   all_contents.remove_if([&bc](electron::api::WebContents* wc) {
-    return (bc != wc->web_contents()->GetBrowserContext());
+    return (bc != wc->web_contents()->GetBrowserContext()) ||
+           !IsElectronBrowserTab(wc->web_contents());
   });
 
   for (auto* contents : all_contents) {
@@ -302,7 +303,7 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
       continue;
 
     // Match webContents active status.
-    if (!MatchesBool(params->query_info.active, contents->IsFocused()))
+    if (!MatchesBool(params->query_info.active, IsElectronBrowserTabActive(contents)))
       continue;
 
     const GURL& committed_url = wc->GetLastCommittedURL();
@@ -330,7 +331,9 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
       tab.title = base::UTF16ToUTF8(wc->GetTitle());
       tab.url = committed_url.spec();
     }
-    tab.active = contents->IsFocused();
+    tab.active = IsElectronBrowserTabActive(contents);
+    tab.window_id = ElectronBrowserTabWindowId(wc);
+    tab.index = ElectronBrowserTabIndex(wc);
     tab.audible = contents->IsCurrentlyAudible();
     tab.muted_info = CreateMutedInfo(wc);
     // TODO: Add proper support for split views
@@ -361,7 +364,9 @@ ExtensionFunction::ResponseAction TabsGetFunction::Run() {
     tab.title = base::UTF16ToUTF8(wc->GetTitle());
   }
 
-  tab.active = contents->IsFocused();
+  tab.active = IsElectronBrowserTabActive(contents);
+  tab.window_id = ElectronBrowserTabWindowId(wc);
+  tab.index = ElectronBrowserTabIndex(wc);
   tab.last_accessed = wc->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
   // TODO: Add proper support for split views
   tab.split_view_id = -1;
@@ -699,7 +704,7 @@ ExtensionFunction::ResponseValue TabsUpdateFunction::GetResult() {
   }
 
   if (api_web_contents)
-    tab.active = api_web_contents->IsFocused();
+    tab.active = api_web_IsElectronBrowserTabActive(contents);
   tab.muted_info = CreateMutedInfo(web_contents_);
   tab.audible = web_contents_->IsCurrentlyAudible();
   // TODO: Add proper support for split views

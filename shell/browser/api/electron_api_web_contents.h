@@ -303,6 +303,8 @@ class WebContents final : public ExclusiveAccessContext,
   void CopyImageAt(int x, int y);
 
   // Focus.
+  void SetBrowserTabState(gin_helper::ErrorThrower thrower, bool active,
+                          int window_id, int index);
   void Focus();
   bool IsFocused() const;
 

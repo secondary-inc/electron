@@ -203,6 +203,7 @@
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/mojom/view_type.mojom.h"
 #include "shell/browser/extensions/electron_extension_web_contents_observer.h"
+#include "shell/browser/extensions/electron_extension_tab_util.h"
 #endif
 
 #if BUILDFLAG(ENABLE_PRINTING)
@@ -3973,6 +3974,19 @@ void WebContents::CopyImageAt(int x, int y) {
     host->CopyImageAt(x, y);
 }
 
+void WebContents::SetBrowserTabState(gin_helper::ErrorThrower thrower, bool active,
+                                     int window_id, int index) {
+  if (window_id < 1 || index < 0) {
+    thrower.ThrowTypeError("Invalid browser tab window or index");
+    return;
+  }
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  extensions::SetElectronBrowserTabState(web_contents(), active, window_id, index);
+#else
+  thrower.ThrowError("Extensions are disabled in this runtime");
+#endif
+}
+
 void WebContents::Focus() {
   // Focusing on WebContents does not automatically focus the window on macOS
   // and Linux, do it manually to match the behavior on Windows.
@@ -5139,6 +5153,7 @@ void WebContents::FillObjectTemplate(v8::Isolate* isolate,
       .SetMethod("replaceMisspelling", &WebContents::ReplaceMisspelling)
       .SetMethod("findInPage", &WebContents::FindInPage)
       .SetMethod("stopFindInPage", &WebContents::StopFindInPage)
+      .SetMethod("setBrowserTabState", &WebContents::SetBrowserTabState)
       .SetMethod("focus", &WebContents::Focus)
       .SetMethod("isFocused", &WebContents::IsFocused)
       .SetMethod("sendInputEvent", &WebContents::SendInputEvent)
