@@ -247,7 +247,6 @@
       },
       {
         "name": "setBadgeBackgroundColor",
-        "deprecated": "chrome.action.setBadgeBackgroundColor is not supported in Electron",
         "type": "function",
         "description": "Sets the background color for the badge.",
         "parameters": [
@@ -283,7 +282,6 @@
       },
       {
         "name": "getBadgeBackgroundColor",
-        "deprecated": "chrome.action.getBadgeBackgroundColor is not supported in Electron",
         "type": "function",
         "description": "Gets the background color of the action.",
         "parameters": [
@@ -304,7 +302,6 @@
       },
       {
         "name": "setBadgeTextColor",
-        "deprecated": "chrome.action.setBadgeTextColor is not supported in Electron",
         "type": "function",
         "description": "Sets the text color for the badge.",
         "parameters": [
@@ -340,7 +337,6 @@
       },
       {
         "name": "getBadgeTextColor",
-        "deprecated": "chrome.action.getBadgeTextColor is not supported in Electron",
         "type": "function",
         "description": "Gets the text color of the action.",
         "parameters": [
