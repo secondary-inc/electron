@@ -154,6 +154,12 @@ ExtensionFunction::ResponseAction ContextMenusUpdateFunction::Run() {
   auto error = Validate(item, *items, key);
   if (!error.empty()) return RespondNow(Error(error));
   items->Set(key, std::move(item));
+  // Reparenting or changing a parent type must not invalidate descendants.
+  for (const auto [child_key, value] : *items) {
+    auto child = value.GetDict().Clone();
+    error = Validate(child, *items, child_key);
+    if (!error.empty()) return RespondNow(Error(error));
+  }
   WriteWorkContextMenus(browser_context(), extension_id(), std::move(state));
   return RespondNow(NoArguments());
 }
