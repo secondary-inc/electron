@@ -688,12 +688,12 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   if (!url.is_valid() || url.spec().size() > 8192 ||
       (!url.SchemeIsHTTPOrHTTPS() && url.spec() != "about:blank") ||
       url.has_username() || url.has_password())
-    return RespondNow(Error("Unsupported tab destination: valid=" + std::to_string(url.is_valid()) + " web=" + std::to_string(url.SchemeIsHTTPOrHTTPS()) + " username=" + std::to_string(url.has_username()) + " password=" + std::to_string(url.has_password()) + " length=" + std::to_string(url.spec().size())));
+    return RespondNow(Error("Only HTTP, HTTPS and about:blank tabs are supported"));
   auto* selected = GetActiveElectronTab(browser_context());
   if (!selected || ElectronBrowserTabWindowId(selected->web_contents()) < 0)
     return RespondNow(Error("No selected browser tab in this profile"));
   const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
-  if (properties.window_id && *properties.window_id != window_id)
+  if (properties.window_id && *properties.window_id != -2 && *properties.window_id != window_id)
     return RespondNow(Error("Only the selected browser window is supported"));
   // The main-process host creates and registers the tab synchronously. A missing,
   // rejected or delayed acknowledgment cannot fabricate a successful result.
@@ -701,7 +701,7 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   auto reply = base::BindRepeating([](scoped_refptr<base::RefCountedData<int>> result,
                                     int id) { if (result->data == -1) result->data = id; }, result);
   selected->Emit("browser-tab-create", extension()->id(), url.spec(),
-                 properties.active.value_or(true), properties.pinned.value_or(false), reply);
+                 properties.active.value_or(properties.selected.value_or(true)), properties.pinned.value_or(false), reply);
   auto* created = GetElectronTabById(result->data, browser_context());
   if (!created || ElectronBrowserTabWindowId(created->web_contents()) != window_id ||
       !created->owner_window() || created->owner_window()->base_window_id() != window_id)

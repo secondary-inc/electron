@@ -276,12 +276,13 @@
         "name": "create",
         "type": "function",
         "parameters": [{"name":"createProperties","type":"object","properties":{
+          "windowId":{"type":"integer","minimum":-2,"optional":true},
+          "index":{"type":"integer","minimum":0,"optional":true},
           "url":{"type":"string","optional":true},
           "active":{"type":"boolean","optional":true},
+          "selected":{"type":"boolean","optional":true,"deprecated":"Please use active."},
           "pinned":{"type":"boolean","optional":true},
-          "windowId":{"type":"integer","optional":true},
-          "index":{"type":"integer","optional":true},
-          "openerTabId":{"type":"integer","optional":true}
+          "openerTabId":{"type":"integer","minimum":0,"optional":true}
         }}],
         "returns_async":{"name":"callback","optional":true,"parameters":[{"name":"tab","$ref":"Tab"}]}
       },
