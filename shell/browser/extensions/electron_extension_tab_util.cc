@@ -13,6 +13,8 @@
 #include "extensions/browser/event_router.h"
 #include "extensions/common/mojom/frame.mojom.h"
 #include "shell/browser/api/electron_api_web_contents.h"
+#include "shell/browser/web_contents_zoom_observer.h"
+#include "third_party/blink/public/common/page/page_zoom.h"
 
 namespace extensions {
 namespace {
@@ -22,18 +24,60 @@ const char kBrowserTabFrames[] = "iris-browser-tab-frames";
 // Installed once when the embedder registers a browser tab. Frame identity must
 // match the ID used by tab-specific extension permissions, not keyboard focus.
 class BrowserTabFrames : public base::SupportsUserData::Data,
-                         public content::WebContentsObserver {
+                         public content::WebContentsObserver,
+                         public electron::WebContentsZoomObserver {
  public:
   explicit BrowserTabFrames(content::WebContents* contents)
       : content::WebContentsObserver(contents) {
+    zoom_ = electron::WebContentsZoomController::FromWebContents(contents);
+    if (zoom_) {
+      zoom_level_ = zoom_->GetZoomLevel();
+      zoom_mode_ = zoom_->zoom_mode();
+      zoom_->AddObserver(this);
+    }
     contents->ForEachRenderFrameHost([this](content::RenderFrameHost* frame) {
       SetTabId(frame);
     });
+  }
+  ~BrowserTabFrames() override {
+    if (zoom_) zoom_->RemoveObserver(this);
+  }
+  void OnZoomControllerDestroyed(electron::WebContentsZoomController* controller) override {
+    controller->RemoveObserver(this);
+    zoom_ = nullptr;
+  }
+  void OnZoomChanged(const electron::WebContentsZoomController::ZoomChangedEventData& data) override {
+    if (!web_contents() || !web_contents()->GetUserData(kBrowserTabState)) return;
+    if (blink::ZoomValuesEqual(zoom_level_, data.new_zoom_level) && zoom_mode_ == data.zoom_mode) return;
+    const double old_level = zoom_level_;
+    zoom_level_ = data.new_zoom_level;
+    zoom_mode_ = data.zoom_mode;
+    auto* tab = electron::api::WebContents::From(web_contents());
+    auto* router = EventRouter::Get(web_contents()->GetBrowserContext());
+    if (!tab || !router) return;
+    using Controller = electron::WebContentsZoomController;
+    base::DictValue settings;
+    settings.Set("mode", zoom_mode_ == Controller::ZOOM_MODE_MANUAL ? "manual" :
+        zoom_mode_ == Controller::ZOOM_MODE_DISABLED ? "disabled" : "automatic");
+    settings.Set("scope", zoom_mode_ == Controller::ZOOM_MODE_DEFAULT ? "per-origin" : "per-tab");
+    base::DictValue info;
+    info.Set("tabId", tab->ID());
+    info.Set("oldZoomFactor", blink::ZoomLevelToZoomFactor(old_level));
+    info.Set("newZoomFactor", blink::ZoomLevelToZoomFactor(zoom_level_));
+    info.Set("zoomSettings", std::move(settings));
+    base::ListValue args;
+    args.Append(std::move(info));
+    router->BroadcastEvent(std::make_unique<Event>(
+        events::TABS_ON_ZOOM_CHANGE, "tabs.onZoomChange", std::move(args),
+        web_contents()->GetBrowserContext()));
   }
   void RenderFrameCreated(content::RenderFrameHost* frame) override {
     SetTabId(frame);
   }
  private:
+  raw_ptr<electron::WebContentsZoomController> zoom_ = nullptr;
+  double zoom_level_ = 0;
+  electron::WebContentsZoomController::ZoomMode zoom_mode_ = electron::WebContentsZoomController::ZOOM_MODE_DEFAULT;
   void SetTabId(content::RenderFrameHost* frame) {
     if (!frame->IsRenderFrameLive()) return;
     auto* observer = ExtensionWebContentsObserver::GetForWebContents(web_contents());

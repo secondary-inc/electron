@@ -1025,7 +1025,6 @@
       },
       {
         "name": "onZoomChange",
-        "deprecated": "chrome.tabs.onZoomChange is not current supported in Electron",
         "type": "function",
         "description": "Fired when a tab is zoomed.",
         "parameters": [
