@@ -453,8 +453,7 @@ ExtensionFunction::ResponseAction TabsSetZoomFunction::Run() {
   auto* zoom_controller = contents->GetZoomController();
   double zoom_level = params->zoom_factor > 0
                           ? blink::ZoomFactorToZoomLevel(params->zoom_factor)
-                          : blink::ZoomFactorToZoomLevel(
-                                zoom_controller->default_zoom_factor());
+                          : zoom_controller->GetDefaultZoomLevel();
 
   if (!zoom_controller->SetZoomLevel(zoom_level))
     return RespondNow(Error("Cannot zoom this tab in its current state"));
