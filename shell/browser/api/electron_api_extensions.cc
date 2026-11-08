@@ -10,6 +10,7 @@
 #include "extensions/browser/event_router.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "base/strings/utf_string_conversions.h"
+#include "shell/common/extensions/api/tabs.h"
 #include "shell/browser/extensions/electron_extension_tab_util.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "gin/data_object_builder.h"
@@ -175,22 +176,26 @@ void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
     return;
   }
   auto* contents = tab->web_contents();
-  base::DictValue value;
-  value.Set("id", tab_id);
-  value.Set("active", true);
-  value.Set("windowId", extensions::ElectronBrowserTabWindowId(contents));
-  value.Set("index", extensions::ElectronBrowserTabIndex(contents));
-  value.Set("incognito", browser_context()->IsOffTheRecord());
-  value.Set("pinned", false);
-  value.Set("highlighted", true);
-  value.Set("status", contents->IsLoading() ? "loading" : "complete");
+  extensions::api::tabs::Tab value;
+  value.id = tab_id;
+  value.active = true;
+  value.selected = true;
+  value.highlighted = true;
+  value.window_id = extensions::ElectronBrowserTabWindowId(contents);
+  value.index = extensions::ElectronBrowserTabIndex(contents);
+  value.incognito = browser_context()->IsOffTheRecord();
+  value.group_id = -1;
+  value.split_view_id = -1;
+  value.last_accessed = contents->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
+  value.status = contents->IsLoading() ? extensions::api::tabs::TabStatus::kLoading :
+                                        extensions::api::tabs::TabStatus::kComplete;
   const auto& url = contents->GetLastCommittedURL();
   // Dispatch does not grant new host or activeTab permissions.
   if (extension->permissions_data()->HasAPIPermissionForTab(
           tab_id, extensions::mojom::APIPermissionID::kTab) ||
       extension->permissions_data()->HasHostPermission(url)) {
-    value.Set("url", url.spec());
-    value.Set("title", base::UTF16ToUTF8(contents->GetTitle()));
+    value.url = url.spec();
+    value.title = base::UTF16ToUTF8(contents->GetTitle());
   }
   const bool legacy = action->action_type() == extensions::ActionInfo::Type::kBrowser;
   const bool page = action->action_type() == extensions::ActionInfo::Type::kPage;
@@ -198,7 +203,7 @@ void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
       page ? extensions::events::PAGE_ACTION_ON_CLICKED :
       legacy ? extensions::events::BROWSER_ACTION_ON_CLICKED : extensions::events::ACTION_ON_CLICKED,
       page ? "pageAction.onClicked" : legacy ? "browserAction.onClicked" : "action.onClicked",
-      base::ListValue().Append(std::move(value)), browser_context());
+      base::ListValue().Append(value.ToValue()), browser_context());
   event->user_gesture = extensions::EventRouter::UserGestureState::kEnabled;
   extensions::EventRouter::Get(browser_context())->DispatchEventToExtension(extension_id, std::move(event));
 }
