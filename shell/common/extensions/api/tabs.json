@@ -273,6 +273,19 @@
         }
       },
       {
+        "name": "create",
+        "type": "function",
+        "parameters": [{"name":"createProperties","type":"object","properties":{
+          "url":{"type":"string","optional":true},
+          "active":{"type":"boolean","optional":true},
+          "pinned":{"type":"boolean","optional":true},
+          "windowId":{"type":"integer","optional":true},
+          "index":{"type":"integer","optional":true},
+          "openerTabId":{"type":"integer","optional":true}
+        }}],
+        "returns_async":{"name":"callback","optional":true,"parameters":[{"name":"tab","$ref":"Tab"}]}
+      },
+      {
         "name": "executeScript",
         "deprecated": "Replaced by $(ref:scripting.executeScript) in Manifest V3.",
         "type": "function",

@@ -11,6 +11,9 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/functional/bind.h"
+#include "base/memory/ref_counted.h"
+#include "shell/common/gin_converters/callback_converter.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/strings/pattern.h"
 #include "base/types/expected_macros.h"
@@ -674,6 +677,38 @@ base::expected<GURL, std::string> PrepareURLForNavigation(
 }
 
 }  // namespace
+
+ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
+  auto params = tabs::Create::Params::Create(args());
+  EXTENSION_FUNCTION_VALIDATE(params);
+  const auto& properties = params->create_properties;
+  if (properties.index || properties.opener_tab_id)
+    return RespondNow(Error("Tab index and opener assignment are not supported"));
+  const GURL url(properties.url.value_or("about:blank"));
+  if (!url.is_valid() || url.spec().size() > 8192 ||
+      (!url.SchemeIsHTTPOrHTTPS() && url.spec() != "about:blank") ||
+      url.has_username() || url.has_password())
+    return RespondNow(Error("Only HTTP, HTTPS and about:blank tabs are supported"));
+  auto* selected = GetActiveElectronTab(browser_context());
+  if (!selected || ElectronBrowserTabWindowId(selected->web_contents()) < 0)
+    return RespondNow(Error("No selected browser tab in this profile"));
+  const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
+  if (properties.window_id && *properties.window_id != window_id)
+    return RespondNow(Error("Only the selected browser window is supported"));
+  // The main-process host creates and registers the tab synchronously. A missing,
+  // rejected or delayed acknowledgment cannot fabricate a successful result.
+  auto result = base::MakeRefCounted<base::RefCountedData<int>>(-1);
+  auto reply = base::BindRepeating([](scoped_refptr<base::RefCountedData<int>> result,
+                                    int id) { if (result->data == -1) result->data = id; }, result);
+  selected->Emit("browser-tab-create", extension()->id(), url.spec(),
+                 properties.active.value_or(true), properties.pinned.value_or(false), reply);
+  auto* created = GetElectronTabById(result->data, browser_context());
+  if (!created || ElectronBrowserTabWindowId(created->web_contents()) != window_id ||
+      !created->owner_window() || created->owner_window()->base_window_id() != window_id)
+    return RespondNow(Error("The browser refused to create this tab"));
+  web_contents_ = created->web_contents();
+  return RespondNow(GetResult());
+}
 
 TabsUpdateFunction::TabsUpdateFunction() : web_contents_(nullptr) {}
 

@@ -135,6 +135,12 @@ class TabsUpdateFunction : public ExtensionFunction {
 
   DECLARE_EXTENSION_FUNCTION("tabs.update", TABS_UPDATE)
 };
+class TabsCreateFunction : public TabsUpdateFunction {
+ private:
+  ~TabsCreateFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.create", TABS_CREATE)
+};
 }  // namespace extensions
 
 #endif  // ELECTRON_SHELL_BROWSER_EXTENSIONS_API_TABS_TABS_API_H_
