@@ -16,6 +16,7 @@
 #include "shell/browser/extensions/electron_extension_tab_util.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "url/origin.h"
+#include "content/public/common/color_parser.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/common/mojom/view_type.mojom.h"
@@ -23,6 +24,26 @@
 using content::WebContents;
 
 namespace extensions {
+namespace {
+bool ParseActionColor(const base::Value& value, SkColor* color) {
+  if (value.is_string())
+    return content::ParseCssColorString(value.GetString(), color);
+  if (!value.is_list() || value.GetList().size() != 4) return false;
+  const auto& values = value.GetList();
+  for (const auto& component : values)
+    if (!component.is_int() || component.GetInt() < 0 || component.GetInt() > 255)
+      return false;
+  *color = SkColorSetARGB(values[3].GetInt(), values[0].GetInt(),
+                          values[1].GetInt(), values[2].GetInt());
+  return true;
+}
+base::ListValue ActionColorValues(SkColor color) {
+  return base::ListValue().Append(static_cast<int>(SkColorGetR(color)))
+      .Append(static_cast<int>(SkColorGetG(color)))
+      .Append(static_cast<int>(SkColorGetB(color)))
+      .Append(static_cast<int>(SkColorGetA(color)));
+}
+}  // namespace
 
 //
 // ExtensionActionAPI::Observer
@@ -171,16 +192,27 @@ ExtensionActionSetBadgeTextFunction::RunExtensionAction() {
 
 ExtensionFunction::ResponseAction
 ExtensionActionSetBadgeBackgroundColorFunction::RunExtensionAction() {
-  LOG(INFO)
-      << "chrome.action.setBadgeBackgroundColor is not supported in Electron";
-
+  EXTENSION_FUNCTION_VALIDATE(!args().empty() && args()[0].is_dict());
+  const auto* value = args()[0].GetDict().Find("color");
+  EXTENSION_FUNCTION_VALIDATE(value);
+  SkColor color = 0;
+  if (!ParseActionColor(*value, &color))
+    return RespondNow(Error("Invalid badge color"));
+  action_->SetBadgeBackgroundColor(tab_id_, color);
+  NotifyActionChange();
   return RespondNow(NoArguments());
 }
 
 ExtensionFunction::ResponseAction
 ActionSetBadgeTextColorFunction::RunExtensionAction() {
-  LOG(INFO) << "chrome.action.setBadgeTextColor is not supported in Electron";
-
+  EXTENSION_FUNCTION_VALIDATE(!args().empty() && args()[0].is_dict());
+  const auto* value = args()[0].GetDict().Find("color");
+  EXTENSION_FUNCTION_VALIDATE(value);
+  SkColor color = 0;
+  if (!ParseActionColor(*value, &color) || SkColorGetA(color) == 0)
+    return RespondNow(Error("Invalid badge color"));
+  action_->SetBadgeTextColor(tab_id_, color);
+  NotifyActionChange();
   return RespondNow(NoArguments());
 }
 
@@ -201,11 +233,8 @@ ExtensionActionGetBadgeTextFunction::RunExtensionAction() {
 
 ExtensionFunction::ResponseAction
 ExtensionActionGetBadgeBackgroundColorFunction::RunExtensionAction() {
-  LOG(INFO)
-      << "chrome.action.getBadgeBackgroundColor is not supported in Electron";
-
-  base::ListValue list;
-  return RespondNow(WithArguments(std::move(list)));
+  return RespondNow(WithArguments(
+      ActionColorValues(action_->GetBadgeBackgroundColor(tab_id_))));
 }
 
 ExtensionFunction::ResponseAction
