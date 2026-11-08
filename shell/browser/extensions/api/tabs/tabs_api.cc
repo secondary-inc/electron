@@ -717,17 +717,23 @@ ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
         !target->owner_window() || target->owner_window()->base_window_id() != window_id)
       return RespondNow(Error("No such browser tab in the selected profile window"));
   }
-  if (!selected->Emit("browser-tabs-move", extension()->id(), ids, *index))
+  auto indices = base::MakeRefCounted<base::RefCountedData<std::vector<int>>>();
+  auto reply = base::BindRepeating(
+      [](scoped_refptr<base::RefCountedData<std::vector<int>>> indices,
+         const std::vector<int>& values) { indices->data = values; }, indices);
+  if (!selected->Emit("browser-tabs-move", extension()->id(), ids, *index, reply) ||
+      indices->data.size() != ids.size())
     return RespondNow(Error("The browser refused to move these tabs"));
   base::ListValue result;
-  for (int id : ids) {
+  for (size_t position = 0; position < ids.size(); ++position) {
+    const int id = ids[position];
     auto* target = GetElectronTabById(id, browser_context());
     if (!target) return RespondNow(Error("The tab closed during move"));
     auto* wc = target->web_contents();
     tabs::Tab tab;
     tab.id = id;
     tab.window_id = window_id;
-    tab.index = ElectronBrowserTabIndex(wc);
+    tab.index = indices->data[position];
     tab.active = IsElectronBrowserTabActive(target);
     tab.selected = tab.active;
     tab.highlighted = tab.active;
@@ -745,7 +751,7 @@ ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
     }
     result.Append(tab.ToValue());
   }
-  if (!multiple) return RespondNow(WithArguments(std::move(result[0])));
+  if (ids.size() == 1) return RespondNow(WithArguments(std::move(result[0])));
   return RespondNow(WithArguments(std::move(result)));
 }
 
