@@ -167,6 +167,20 @@
     ],
     "functions": [
       {
+        "name": "goBack",
+        "type": "function",
+        "description": "Goes back to the previous page in a tab.",
+        "parameters": [{"name": "tabId", "type": "integer", "minimum": 0, "optional": true}],
+        "returns_async": {"name": "callback", "optional": true, "parameters": []}
+      },
+      {
+        "name": "goForward",
+        "type": "function",
+        "description": "Goes forward to the next page in a tab.",
+        "parameters": [{"name": "tabId", "type": "integer", "minimum": 0, "optional": true}],
+        "returns_async": {"name": "callback", "optional": true, "parameters": []}
+      },
+      {
         "name": "reload",
         "type": "function",
         "description": "Reload a tab.",

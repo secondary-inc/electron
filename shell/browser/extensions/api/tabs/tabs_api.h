@@ -48,6 +48,17 @@ class TabsExecuteScriptFunction : public ExecuteCodeInTabFunction {
   DECLARE_EXTENSION_FUNCTION("tabs.executeScript", TABS_EXECUTESCRIPT)
 };
 
+class TabsGoBackFunction : public ExtensionFunction {
+  ~TabsGoBackFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.goBack", TABS_GOBACK)
+};
+class TabsGoForwardFunction : public ExtensionFunction {
+  ~TabsGoForwardFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.goForward", TABS_GOFORWARD)
+};
+
 class TabsReloadFunction : public ExtensionFunction {
   ~TabsReloadFunction() override = default;
 

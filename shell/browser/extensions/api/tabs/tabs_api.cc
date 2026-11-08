@@ -230,6 +230,30 @@ bool TabsExecuteScriptFunction::ShouldRemoveCSS() const {
   return false;
 }
 
+ExtensionFunction::ResponseAction TabsGoBackFunction::Run() {
+  auto params = tabs::GoBack::Params::Create(args());
+  EXTENSION_FUNCTION_VALIDATE(params);
+  auto* tab = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                            : GetActiveElectronTab(browser_context());
+  if (!tab) return RespondNow(Error("No such tab"));
+  auto& controller = tab->web_contents()->GetController();
+  if (!controller.CanGoBack()) return RespondNow(Error("No previous page in tab history"));
+  controller.GoBack();
+  return RespondNow(NoArguments());
+}
+
+ExtensionFunction::ResponseAction TabsGoForwardFunction::Run() {
+  auto params = tabs::GoForward::Params::Create(args());
+  EXTENSION_FUNCTION_VALIDATE(params);
+  auto* tab = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                            : GetActiveElectronTab(browser_context());
+  if (!tab) return RespondNow(Error("No such tab"));
+  auto& controller = tab->web_contents()->GetController();
+  if (!controller.CanGoForward()) return RespondNow(Error("No next page in tab history"));
+  controller.GoForward();
+  return RespondNow(NoArguments());
+}
+
 ExtensionFunction::ResponseAction TabsReloadFunction::Run() {
   std::optional<tabs::Reload::Params> params =
       tabs::Reload::Params::Create(args());
