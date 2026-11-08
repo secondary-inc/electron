@@ -293,6 +293,15 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
       continue;
 
     auto* wc = contents->web_contents();
+    const int managed_window_id = ElectronBrowserTabWindowId(wc);
+    if (managed_window_id >= 0) {
+      if (params->query_info.window_id && *params->query_info.window_id >= 0 &&
+          *params->query_info.window_id != managed_window_id)
+        continue;
+      if (params->query_info.index &&
+          *params->query_info.index != ElectronBrowserTabIndex(wc))
+        continue;
+    }
 
     // Match webContents audible value.
     if (!MatchesBool(audible, wc->IsCurrentlyAudible()))
