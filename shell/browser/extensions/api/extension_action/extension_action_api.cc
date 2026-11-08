@@ -169,13 +169,6 @@ ExtensionActionSetIconFunction::RunExtensionAction() {
 }
 
 ExtensionFunction::ResponseAction
-ExtensionActionOpenPopupFunction::RunExtensionAction() {
-  LOG(INFO) << "chrome.action.openPopup is not supported in Electron";
-
-  return RespondNow(WithArguments(""));
-}
-
-ExtensionFunction::ResponseAction
 ExtensionActionSetTitleFunction::RunExtensionAction() {
   EXTENSION_FUNCTION_VALIDATE(!args().empty() && args()[0].is_dict());
   const auto* title = args()[0].GetDict().FindString("title");
@@ -276,6 +269,11 @@ ExtensionFunction::ResponseAction ActionGetUserSettingsFunction::Run() {
 
 ExtensionFunction::ResponseAction
 ActionOpenPopupFunction::RunExtensionAction() {
+  return ExtensionActionOpenPopupFunction::RunExtensionAction();
+}
+
+ExtensionFunction::ResponseAction
+ExtensionActionOpenPopupFunction::RunExtensionAction() {
   auto* tab = GetActiveElectronTab(browser_context());
   if (!tab || ElectronBrowserTabWindowId(tab->web_contents()) < 0)
     return RespondNow(Error("No active managed browser window"));
@@ -294,13 +292,13 @@ ActionOpenPopupFunction::RunExtensionAction() {
     return RespondNow(Error("No enabled popup for the selected tab"));
   using Pending = base::RefCountedData<base::OnceCallback<void(bool)>>;
   auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
-      [](scoped_refptr<ActionOpenPopupFunction> function, bool success) {
+      [](scoped_refptr<ExtensionActionOpenPopupFunction> function, bool success) {
         if (success)
           function->Respond(function->NoArguments());
         else
           function->Respond(function->Error("Failed to open popup."));
       },
-      scoped_refptr<ActionOpenPopupFunction>(this)));
+      scoped_refptr<ExtensionActionOpenPopupFunction>(this)));
   auto respond = base::BindRepeating(
       [](scoped_refptr<Pending> pending, bool success) {
         if (pending->data)
