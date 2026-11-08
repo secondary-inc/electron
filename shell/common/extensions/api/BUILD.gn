@@ -39,7 +39,7 @@ generated_json_strings("generated_api_json_strings") {
   sources = [
     "action.json",
     "browser_action.json",
-    "//chrome/common/extensions/api/context_menus.json",
+    "context_menus.json",
     "extension.json",
     "font_settings.json",
     "permissions.json",
