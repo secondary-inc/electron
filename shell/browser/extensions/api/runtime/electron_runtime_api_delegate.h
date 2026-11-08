@@ -33,6 +33,9 @@ class ElectronRuntimeAPIDelegate : public RuntimeAPIDelegate {
   bool CheckForUpdates(const std::string& extension_id,
                        UpdateCheckCallback callback) override;
   void OpenURL(const GURL& uninstall_url) override;
+  void OpenOptionsPage(const Extension* extension,
+                       content::BrowserContext* browser_context,
+                       base::OnceCallback<void(bool)> callback) override;
   bool GetPlatformInfo(api::runtime::PlatformInfo* info) override;
   bool RestartDevice(std::string* error_message) override;
 

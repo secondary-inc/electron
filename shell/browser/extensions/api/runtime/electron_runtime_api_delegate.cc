@@ -8,6 +8,16 @@
 #include <string_view>
 
 #include "base/logging.h"
+#include "base/functional/bind.h"
+#include "base/memory/ref_counted.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/options_page_info.h"
+#include "shell/browser/api/electron_api_web_contents.h"
+#include "shell/browser/extensions/electron_extension_tab_util.h"
+#include "shell/common/gin_helper/callback.h"
 #include "components/update_client/update_query_params.h"
 #include "extensions/common/api/runtime.h"
 #include "shell/browser/extensions/electron_extension_system.h"
@@ -44,6 +54,41 @@ bool ElectronRuntimeAPIDelegate::CheckForUpdates(
 
 void ElectronRuntimeAPIDelegate::OpenURL(const GURL& uninstall_url) {
   LOG(INFO) << "chrome.runtime.openURL is not supported in Electron";
+}
+
+void ElectronRuntimeAPIDelegate::OpenOptionsPage(
+    const Extension* extension,
+    content::BrowserContext* browser_context,
+    base::OnceCallback<void(bool)> callback) {
+  if (browser_context != browser_context_ || !extension ||
+      !ExtensionRegistry::Get(browser_context)->enabled_extensions().Contains(
+          extension->id()) ||
+      !OptionsPageInfo::HasOptionsPage(extension)) {
+    std::move(callback).Run(false);
+    return;
+  }
+  auto* contents = GetActiveElectronTab(browser_context);
+  if (!contents || ElectronBrowserTabWindowId(contents->web_contents()) < 0) {
+    std::move(callback).Run(false);
+    return;
+  }
+  // Only the main-process host may acknowledge an actual options document.
+  // Complete exactly once, including a missing host or an abandoned request.
+  using Pending = base::RefCountedData<base::OnceCallback<void(bool)>>;
+  auto pending = base::MakeRefCounted<Pending>(std::move(callback));
+  auto respond = base::BindRepeating(
+      [](scoped_refptr<Pending> pending, bool success) {
+        if (pending->data)
+          std::move(pending->data).Run(success);
+      },
+      pending);
+  if (!contents->Emit("browser-extension-options", extension->id(), respond)) {
+    respond.Run(false);
+    return;
+  }
+  if (pending->data)
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(respond, false), base::Seconds(15));
 }
 
 bool ElectronRuntimeAPIDelegate::GetPlatformInfo(PlatformInfo* info) {
