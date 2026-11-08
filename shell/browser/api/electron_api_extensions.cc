@@ -8,7 +8,9 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/icon_util.h"
+#include "base/base64.h"
+#include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/image/image_skia.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "base/strings/utf_string_conversions.h"
 #include "shell/common/extensions/api/tabs.h"
@@ -150,7 +152,15 @@ base::DictValue Extensions::GetActionState(gin_helper::ErrorThrower thrower,
   auto icon = action->GetExplicitlySetIcon(tab_id);
   // Electron does not package Chrome's default icon placeholder resources.
   // Leave the icon empty until the extension supplies explicit image data.
-  const std::string icon_url = icon.IsEmpty() ? "" : extensions::GetIconUrlFromImage(icon).spec();
+  std::string icon_url;
+  if (!icon.IsEmpty()) {
+    const auto& bitmap = icon.AsImageSkia().GetRepresentation(1.0f).GetBitmap();
+    if (!bitmap.isNull() && bitmap.width() <= 512 && bitmap.height() <= 512) {
+      auto png = gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, false);
+      if (png && png->size() <= 768 * 1024)
+        icon_url = "data:image/png;base64," + base::Base64Encode(*png);
+    }
+  }
   return base::DictValue()
       .Set("icon", icon_url.size() <= 1024 * 1024 ? icon_url : "")
       .Set("title", action->GetTitle(tab_id))
