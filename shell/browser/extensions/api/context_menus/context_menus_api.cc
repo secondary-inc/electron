@@ -56,6 +56,7 @@ std::string Validate(base::DictValue& item, const base::DictValue& items, const 
     return "Only valid HTTP(S) menu patterns are supported";
   if (const auto* parent = item.Find("parentId")) {
     auto parent_key = WorkContextMenuKey(*parent);
+    if (parent_key.empty()) return "Invalid parent menu ID";
     std::set<std::string> seen{key};
     while (!parent_key.empty()) {
       if (!seen.insert(parent_key).second) return "Menu parent cycle";
@@ -83,6 +84,7 @@ base::DictValue ReadWorkContextMenus(content::BrowserContext* context, const std
   const auto* stored = ExtensionPrefs::Get(context)->ReadPrefAsDictionary(id, kMenuPref);
   if (stored && stored->FindInt("revision") && stored->FindDict("items") && stored->FindDict("items")->size() <= 100) {
     bool valid = true;
+    base::DictValue normalized;
     const auto& items = *stored->FindDict("items");
     for (const auto [key, value] : items) {
       if (!value.is_dict()) { valid = false; break; }
@@ -91,8 +93,13 @@ base::DictValue ReadWorkContextMenus(content::BrowserContext* context, const std
       if (!item_id || WorkContextMenuKey(*item_id) != key || !Validate(item, items, key).empty()) {
         valid = false; break;
       }
+      normalized.Set(key, std::move(item));
     }
-    if (valid) return stored->Clone();
+    if (valid) {
+      auto result = stored->Clone();
+      result.Set("items", std::move(normalized));
+      return result;
+    }
   }
   return base::DictValue().Set("revision", 0).Set("items", base::DictValue());
 }
