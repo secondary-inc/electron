@@ -455,7 +455,6 @@
     "events": [
       {
         "name": "onClicked",
-        "deprecated": "chrome.action.onClicked is not supported in Electron",
         "type": "function",
         "description": "Fired when an action icon is clicked.  This event will not fire if the action has a popup.",
         "parameters": [

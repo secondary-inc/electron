@@ -7,6 +7,9 @@
 #include "chrome/browser/browser_process.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_action_manager.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/permissions/permissions_data.h"
+#include "base/strings/utf_string_conversions.h"
 #include "shell/browser/extensions/electron_extension_tab_util.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "gin/data_object_builder.h"
@@ -150,6 +153,55 @@ base::DictValue Extensions::GetActionState(gin_helper::ErrorThrower thrower,
       .Set("badgeTextColor", static_cast<double>(action->GetBadgeTextColor(tab_id)))
       .Set("enabled", action->GetIsVisibleIgnoringDeclarative(tab_id));
 }
+void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
+                             const std::string& extension_id, int tab_id) {
+  auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                        ->enabled_extensions().GetByID(extension_id);
+  auto* tab = extensions::GetElectronTabById(tab_id, browser_context());
+  if (!extension || !tab ||
+      extensions::ElectronBrowserTabWindowId(tab->web_contents()) < 0 ||
+      !extensions::IsElectronBrowserTabActive(tab)) {
+    thrower.ThrowError("Enabled extension and selected managed tab required");
+    return;
+  }
+  auto* action = extensions::ExtensionActionManager::Get(browser_context())
+                     ->GetExtensionAction(*extension);
+  if (!action || !action->GetIsVisibleIgnoringDeclarative(tab_id)) {
+    thrower.ThrowError("Extension action is disabled");
+    return;
+  }
+  if (action->HasPopup(tab_id)) {
+    thrower.ThrowError("Open the extension popup instead");
+    return;
+  }
+  auto* contents = tab->web_contents();
+  base::DictValue value;
+  value.Set("id", tab_id);
+  value.Set("active", true);
+  value.Set("windowId", extensions::ElectronBrowserTabWindowId(contents));
+  value.Set("index", extensions::ElectronBrowserTabIndex(contents));
+  value.Set("incognito", browser_context()->IsOffTheRecord());
+  value.Set("pinned", false);
+  value.Set("highlighted", true);
+  value.Set("status", contents->IsLoading() ? "loading" : "complete");
+  const auto& url = contents->GetLastCommittedURL();
+  // Dispatch does not grant new host or activeTab permissions.
+  if (extension->permissions_data()->HasAPIPermissionForTab(
+          tab_id, extensions::mojom::APIPermissionID::kTab) ||
+      extension->permissions_data()->HasHostPermission(url)) {
+    value.Set("url", url.spec());
+    value.Set("title", base::UTF16ToUTF8(contents->GetTitle()));
+  }
+  const bool legacy = action->action_type() == extensions::ActionInfo::Type::kBrowser;
+  const bool page = action->action_type() == extensions::ActionInfo::Type::kPage;
+  auto event = std::make_unique<extensions::Event>(
+      page ? extensions::events::PAGE_ACTION_ON_CLICKED :
+      legacy ? extensions::events::BROWSER_ACTION_ON_CLICKED : extensions::events::ACTION_ON_CLICKED,
+      page ? "pageAction.onClicked" : legacy ? "browserAction.onClicked" : "action.onClicked",
+      base::ListValue().Append(std::move(value)), browser_context());
+  event->user_gesture = extensions::EventRouter::UserGestureState::kEnabled;
+  extensions::EventRouter::Get(browser_context())->DispatchEventToExtension(extension_id, std::move(event));
+}
 void Extensions::OnExtensionActionUpdated(extensions::ExtensionAction* action,
                                            content::WebContents* contents,
                                            content::BrowserContext* context) {
@@ -187,7 +239,8 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("removeExtension", &Extensions::RemoveExtension)
       .SetMethod("getExtension", &Extensions::GetExtension)
       .SetMethod("getAllExtensions", &Extensions::GetAllExtensions)
-      .SetMethod("getActionState", &Extensions::GetActionState);
+      .SetMethod("getActionState", &Extensions::GetActionState)
+      .SetMethod("clickAction", &Extensions::ClickAction);
 }
 
 const gin::WrapperInfo* Extensions::wrapper_info() const {
