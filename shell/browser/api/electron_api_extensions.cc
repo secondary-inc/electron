@@ -4,6 +4,7 @@
 
 #include "shell/browser/api/electron_api_extensions.h"
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
+#include "extensions/browser/extension_prefs.h"
 
 #include "chrome/browser/browser_process.h"
 #include "extensions/browser/extension_registry.h"
@@ -172,6 +173,27 @@ base::DictValue Extensions::GetActionState(gin_helper::ErrorThrower thrower,
       .Set("badgeTextColor", static_cast<double>(action->GetBadgeTextColor(tab_id)))
       .Set("enabled", action->GetIsVisibleIgnoringDeclarative(tab_id));
 }
+void Extensions::SetActionPinned(gin_helper::ErrorThrower thrower,
+                                 const std::string& extension_id, bool pinned) {
+  auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                        ->enabled_extensions().GetByID(extension_id);
+  if (!extension) {
+    thrower.ThrowError("Enabled extension not found in this profile");
+    return;
+  }
+  auto* prefs = extensions::ExtensionPrefs::Get(browser_context());
+  bool previous = false;
+  prefs->ReadPrefAsBoolean(extension_id, "iris_toolbar_pinned", &previous);
+  if (previous == pinned) return;
+  prefs->UpdateExtensionPref(extension_id, "iris_toolbar_pinned", base::Value(pinned));
+  auto event = std::make_unique<extensions::Event>(
+      extensions::events::ACTION_ON_USER_SETTINGS_CHANGED,
+      "action.onUserSettingsChanged",
+      base::ListValue().Append(base::DictValue().Set("isOnToolbar", pinned)),
+      browser_context());
+  extensions::EventRouter::Get(browser_context())->DispatchEventToExtension(extension_id, std::move(event));
+}
+
 void Extensions::ActivateActionPopup(gin_helper::ErrorThrower thrower,
                                      const std::string& extension_id, int tab_id) {
   auto* extension = extensions::ExtensionRegistry::Get(browser_context())
@@ -289,6 +311,7 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("getExtension", &Extensions::GetExtension)
       .SetMethod("getAllExtensions", &Extensions::GetAllExtensions)
       .SetMethod("getActionState", &Extensions::GetActionState)
+      .SetMethod("setActionPinned", &Extensions::SetActionPinned)
       .SetMethod("activateActionPopup", &Extensions::ActivateActionPopup)
       .SetMethod("clickAction", &Extensions::ClickAction);
 }

@@ -261,9 +261,11 @@ ActionGetUserSettingsFunction::ActionGetUserSettingsFunction() = default;
 ActionGetUserSettingsFunction::~ActionGetUserSettingsFunction() = default;
 
 ExtensionFunction::ResponseAction ActionGetUserSettingsFunction::Run() {
-  LOG(INFO) << "chrome.action.getUserSettings is not supported in Electron";
-
+  bool pinned = false;
+  ExtensionPrefs::Get(browser_context())->ReadPrefAsBoolean(
+      extension_id(), "iris_toolbar_pinned", &pinned);
   base::DictValue ui_settings;
+  ui_settings.Set("isOnToolbar", pinned);
   return RespondNow(WithArguments(std::move(ui_settings)));
 }
 

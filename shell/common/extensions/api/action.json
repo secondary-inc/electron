@@ -33,6 +33,13 @@
         "description": "The collection of user-specified settings relating to an extension's action."
       },
       {
+        "id": "UserSettingsChange",
+        "type": "object",
+        "properties": {
+          "isOnToolbar": {"type": "boolean", "optional": true}
+        }
+      },
+      {
         "id": "OpenPopupOptions",
         "type": "object",
         "properties": {
@@ -418,7 +425,6 @@
       },
       {
         "name": "getUserSettings",
-        "deprecated": "chrome.action.getUserSettings is not supported in Electron",
         "type": "function",
         "description": "Returns the user-specified settings relating to an extension's action.",
         "parameters": [],
@@ -452,6 +458,12 @@
       }
     ],
     "events": [
+      {
+        "name": "onUserSettingsChanged",
+        "type": "function",
+        "description": "Fired when the user changes the action toolbar settings.",
+        "parameters": [{"name": "change", "$ref": "UserSettingsChange"}]
+      },
       {
         "name": "onClicked",
         "type": "function",
