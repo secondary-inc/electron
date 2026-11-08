@@ -11,6 +11,11 @@
 // renderer.
 
 {
+  "windows": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "contexts": ["privileged_extension"]
+  },
   "contextMenus": {
     "channel": "stable",
     "dependencies": ["permission:contextMenus"],

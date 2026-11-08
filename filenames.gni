@@ -791,6 +791,8 @@ filenames = {
     "shell/browser/extensions/api/extension/extension_api.h",
     "shell/browser/extensions/api/font_settings/font_settings_api.cc",
     "shell/browser/extensions/api/font_settings/font_settings_api.h",
+    "shell/browser/extensions/api/windows/windows_api.cc",
+    "shell/browser/extensions/api/windows/windows_api.h",
     "shell/browser/extensions/api/context_menus/context_menus_api.cc",
     "shell/browser/extensions/api/context_menus/context_menus_api.h",
     "shell/browser/extensions/api/extension_action/extension_action_api.cc",
