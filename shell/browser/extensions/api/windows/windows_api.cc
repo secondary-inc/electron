@@ -6,6 +6,8 @@
 #include <vector>
 #include "base/strings/utf_string_conversions.h"
 #include "base/no_destructor.h"
+#include "base/memory/raw_ptr.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -17,7 +19,7 @@ namespace extensions {
 namespace {
 using Contents = electron::api::WebContents;
 struct Window {
-  electron::NativeWindow* native = nullptr;
+  raw_ptr<electron::NativeWindow> native = nullptr;
   std::vector<Contents*> tabs;
 };
 using Windows = std::map<int, Window>;
@@ -62,7 +64,7 @@ int CurrentWindow(const Windows& windows, content::BrowserContext* context) {
 }
 base::DictValue Describe(int id, const Window& window, bool populate,
                          const Extension* extension) {
-  auto* native = window.native;
+  auto* native = window.native.get();
   const auto bounds = native->GetBounds();
   base::DictValue result;
   result.Set("id", id); result.Set("type", "normal");
