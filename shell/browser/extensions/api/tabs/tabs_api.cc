@@ -332,8 +332,10 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
       tab.url = committed_url.spec();
     }
     tab.active = IsElectronBrowserTabActive(contents);
-    tab.window_id = ElectronBrowserTabWindowId(wc);
-    tab.index = ElectronBrowserTabIndex(wc);
+    if (const int window_id = ElectronBrowserTabWindowId(wc); window_id >= 0) {
+      tab.window_id = window_id;
+      tab.index = ElectronBrowserTabIndex(wc);
+    }
     tab.audible = contents->IsCurrentlyAudible();
     tab.muted_info = CreateMutedInfo(wc);
     // TODO: Add proper support for split views
@@ -365,8 +367,10 @@ ExtensionFunction::ResponseAction TabsGetFunction::Run() {
   }
 
   tab.active = IsElectronBrowserTabActive(contents);
-  tab.window_id = ElectronBrowserTabWindowId(wc);
-  tab.index = ElectronBrowserTabIndex(wc);
+  if (const int window_id = ElectronBrowserTabWindowId(wc); window_id >= 0) {
+    tab.window_id = window_id;
+    tab.index = ElectronBrowserTabIndex(wc);
+  }
   tab.last_accessed = wc->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
   // TODO: Add proper support for split views
   tab.split_view_id = -1;
