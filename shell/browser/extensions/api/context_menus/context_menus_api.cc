@@ -87,8 +87,8 @@ base::DictValue ReadWorkContextMenus(content::BrowserContext* context, const std
     for (const auto [key, value] : items) {
       if (!value.is_dict()) { valid = false; break; }
       auto item = value.GetDict().Clone();
-      const auto* id = item.Find("id");
-      if (!id || WorkContextMenuKey(*id) != key || !Validate(item, items, key).empty()) {
+      const auto* item_id = item.Find("id");
+      if (!item_id || WorkContextMenuKey(*item_id) != key || !Validate(item, items, key).empty()) {
         valid = false; break;
       }
     }
