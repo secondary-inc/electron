@@ -704,7 +704,7 @@ ExtensionFunction::ResponseValue TabsUpdateFunction::GetResult() {
   }
 
   if (api_web_contents)
-    tab.active = api_web_IsElectronBrowserTabActive(contents);
+    tab.active = IsElectronBrowserTabActive(api_web_contents);
   tab.muted_info = CreateMutedInfo(web_contents_);
   tab.audible = web_contents_->IsCurrentlyAudible();
   // TODO: Add proper support for split views
