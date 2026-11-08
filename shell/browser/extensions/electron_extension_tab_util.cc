@@ -120,9 +120,13 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
     if (!router || !registry) return;
     for (const auto& extension : registry->enabled_extensions()) {
       if (!router->ExtensionHasEventListener(extension->id(), "tabs.onUpdated")) continue;
-      const bool privileged = extension->permissions_data()->HasAPIPermissionForTab(
-          contents->ID(), mojom::APIPermissionID::kTab) ||
-          extension->permissions_data()->HasHostPermission(url);
+      const auto* permissions = extension->permissions_data();
+      // This observer can run before ActiveTabPermissionGranter revokes a
+      // previous origin. A tab-scoped API grant alone is not sufficient.
+      const bool privileged = permissions->HasAPIPermission(mojom::APIPermissionID::kTab) ||
+          permissions->HasHostPermission(url) ||
+          (permissions->HasAPIPermissionForTab(contents->ID(), mojom::APIPermissionID::kTab) &&
+           permissions->GetPageAccess(url, contents->ID(), nullptr) == PermissionsData::PageAccess::kAllowed);
       auto change = changes.Clone();
       if (!privileged) { change.Remove("url"); change.Remove("title"); }
       if (change.empty()) continue;
