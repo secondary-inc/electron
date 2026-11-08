@@ -789,6 +789,8 @@ filenames = {
     "shell/browser/api/electron_api_extensions.h",
     "shell/browser/extensions/api/extension/extension_api.cc",
     "shell/browser/extensions/api/extension/extension_api.h",
+    "shell/browser/extensions/api/font_settings/font_settings_api.cc",
+    "shell/browser/extensions/api/font_settings/font_settings_api.h",
     "shell/browser/extensions/api/extension_action/extension_action_api.cc",
     "shell/browser/extensions/api/extension_action/extension_action_api.h",
     "shell/browser/extensions/api/management/electron_management_api_delegate.cc",

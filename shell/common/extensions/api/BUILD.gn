@@ -40,6 +40,7 @@ generated_json_strings("generated_api_json_strings") {
     "action.json",
     "browser_action.json",
     "extension.json",
+    "font_settings.json",
     "permissions.json",
     "resources_private.idl",
     "tabs.json",

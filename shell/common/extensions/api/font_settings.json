@@ -1,0 +1,24 @@
+[
+  {
+    "namespace": "fontSettings",
+    "description": "Read-only installed-font enumeration. Browser font preference mutation is not implemented.",
+    "compiler_options": {"implemented_in": "electron/shell/browser/extensions/api/font_settings/font_settings_api.h"},
+    "functions": [{
+      "name": "getFontList",
+      "type": "function",
+      "description": "Returns installed fonts asynchronously when the extension has the fontSettings permission.",
+      "parameters": [],
+      "returns_async": {
+        "name": "callback",
+        "parameters": [{
+          "name": "results",
+          "type": "array",
+          "items": {"type": "object", "properties": {
+            "fontId": {"type": "string"},
+            "displayName": {"type": "string"}
+          }}
+        }]
+      }
+    }]
+  }
+]

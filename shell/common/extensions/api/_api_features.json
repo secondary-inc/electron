@@ -24,6 +24,11 @@
   "action.setBadgeTextColor": {
     "channel": "stable"
   },
+  "fontSettings": {
+    "channel": "stable",
+    "dependencies": ["permission:fontSettings"],
+    "contexts": ["privileged_extension"]
+  },
   "extension": {
     "channel": "stable",
     "extension_types": ["extension"],
