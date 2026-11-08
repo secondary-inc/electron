@@ -688,7 +688,7 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   if (!url.is_valid() || url.spec().size() > 8192 ||
       (!url.SchemeIsHTTPOrHTTPS() && url.spec() != "about:blank") ||
       url.has_username() || url.has_password())
-    return RespondNow(Error("Only HTTP, HTTPS and about:blank tabs are supported"));
+    return RespondNow(Error("Unsupported tab destination: valid=" + std::to_string(url.is_valid()) + " web=" + std::to_string(url.SchemeIsHTTPOrHTTPS()) + " username=" + std::to_string(url.has_username()) + " password=" + std::to_string(url.has_password()) + " length=" + std::to_string(url.spec().size())));
   auto* selected = GetActiveElectronTab(browser_context());
   if (!selected || ElectronBrowserTabWindowId(selected->web_contents()) < 0)
     return RespondNow(Error("No selected browser tab in this profile"));
