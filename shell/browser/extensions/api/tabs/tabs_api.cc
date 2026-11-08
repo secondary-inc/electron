@@ -13,6 +13,9 @@
 #include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
+#include "extensions/browser/extension_registry.h"
 #include "shell/common/gin_converters/callback_converter.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/strings/pattern.h"
@@ -695,19 +698,33 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
   if (properties.window_id && *properties.window_id != -2 && *properties.window_id != window_id)
     return RespondNow(Error("Only the selected browser window is supported"));
-  // The main-process host creates and registers the tab synchronously. A missing,
-  // rejected or delayed acknowledgment cannot fabricate a successful result.
-  auto result = base::MakeRefCounted<base::RefCountedData<int>>(-1);
-  auto reply = base::BindRepeating([](scoped_refptr<base::RefCountedData<int>> result,
-                                    int id) { if (result->data == -1) result->data = id; }, result);
-  selected->Emit("browser-tab-create", extension()->id(), url.spec(),
-                 properties.active.value_or(properties.selected.value_or(true)), properties.pinned.value_or(false), reply);
-  auto* created = GetElectronTabById(result->data, browser_context());
-  if (!created || ElectronBrowserTabWindowId(created->web_contents()) != window_id ||
-      !created->owner_window() || created->owner_window()->base_window_id() != window_id)
-    return RespondNow(Error("The browser refused to create this tab"));
-  web_contents_ = created->web_contents();
-  return RespondNow(GetResult());
+  // Closing an extension popup may require beforeunload. Keep one bounded
+  // response alive; only the main-process host can acknowledge a registered tab.
+  using Pending = base::RefCountedData<base::OnceCallback<void(int)>>;
+  auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
+      [](scoped_refptr<TabsCreateFunction> function, int window_id, int id) {
+        auto* context = function->browser_context();
+        auto* created = context ? GetElectronTabById(id, context) : nullptr;
+        if (!context ||
+            ExtensionRegistry::Get(context)->enabled_extensions().GetByID(function->extension_id()) != function->extension() ||
+            !created || ElectronBrowserTabWindowId(created->web_contents()) != window_id ||
+            !created->owner_window() || created->owner_window()->base_window_id() != window_id) {
+          function->Respond(function->Error("The browser refused to create this tab"));
+          return;
+        }
+        function->web_contents_ = created->web_contents();
+        function->Respond(function->GetResult());
+      }, scoped_refptr<TabsCreateFunction>(this), window_id));
+  auto reply = base::BindRepeating([](scoped_refptr<Pending> pending, int id) {
+    if (pending->data) std::move(pending->data).Run(id);
+  }, pending);
+  if (!selected->Emit("browser-tab-create", extension()->id(), url.spec(),
+                 properties.active.value_or(properties.selected.value_or(true)), properties.pinned.value_or(false), reply))
+    reply.Run(-1);
+  if (pending->data)
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(reply, -1), base::Seconds(15));
+  return did_respond() ? AlreadyResponded() : RespondLater();
 }
 
 TabsUpdateFunction::TabsUpdateFunction() : web_contents_(nullptr) {}
