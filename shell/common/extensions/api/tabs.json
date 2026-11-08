@@ -846,7 +846,6 @@
       },
       {
         "name": "onActivated",
-        "deprecated": "chrome.tabs.onActivated is not current supported in Electron",
         "type": "function",
         "description": "Fires when the active tab in a window changes. Note that the tab's URL may not be set at the time this event fired, but you can listen to onUpdated events so as to be notified when a URL is set.",
         "parameters": [

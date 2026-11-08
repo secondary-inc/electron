@@ -10,6 +10,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "extensions/browser/extension_web_contents_observer.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/mojom/frame.mojom.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 
@@ -58,6 +59,8 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
                                 int window_id, int index, bool pinned) {
   if (!contents->GetUserData(kBrowserTabFrames))
     contents->SetUserData(kBrowserTabFrames, std::make_unique<BrowserTabFrames>(contents));
+  const auto* previous = State(contents);
+  const bool activated = active && (!previous || !previous->active || previous->window_id != window_id);
   auto state = std::make_unique<BrowserTabState>();
   state->active = active;
   state->pinned = pinned;
@@ -66,6 +69,20 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
   contents->SetUserData(kBrowserTabState, std::move(state));
   contents->GetBrowserContext()->SetUserData(
       kManagedBrowserContext, std::make_unique<BrowserTabState>());
+  if (activated && window_id >= 0) {
+    auto* tab = electron::api::WebContents::From(contents);
+    auto* router = EventRouter::Get(contents->GetBrowserContext());
+    if (tab && router) {
+      base::DictValue info;
+      info.Set("tabId", tab->ID());
+      info.Set("windowId", window_id);
+      base::ListValue args;
+      args.Append(std::move(info));
+      router->BroadcastEvent(std::make_unique<Event>(
+          events::TABS_ON_ACTIVATED, "tabs.onActivated", std::move(args),
+          contents->GetBrowserContext()));
+    }
+  }
 }
 bool IsElectronBrowserTabPinned(content::WebContents* contents) {
   auto* state = State(contents);
