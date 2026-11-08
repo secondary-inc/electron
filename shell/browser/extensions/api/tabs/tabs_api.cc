@@ -806,8 +806,8 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   auto params = tabs::Create::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
   const auto& properties = params->create_properties;
-  if (properties.index || properties.opener_tab_id)
-    return RespondNow(Error("Tab index and opener assignment are not supported"));
+  if (properties.opener_tab_id)
+    return RespondNow(Error("Tab opener assignment is not supported"));
   const GURL url(properties.url.value_or("about:blank"));
   if (!url.is_valid() || url.spec().size() > 8192 ||
       (!url.SchemeIsHTTPOrHTTPS() && url.spec() != "about:blank") ||
@@ -840,7 +840,7 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
     if (pending->data) std::move(pending->data).Run(id);
   }, pending);
   if (!selected->Emit("browser-tab-create", extension()->id(), url.spec(),
-                 properties.active.value_or(properties.selected.value_or(true)), properties.pinned.value_or(false), reply))
+                 properties.active.value_or(properties.selected.value_or(true)), properties.pinned.value_or(false), properties.index.value_or(-1), reply))
     reply.Run(-1);
   if (pending->data)
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
