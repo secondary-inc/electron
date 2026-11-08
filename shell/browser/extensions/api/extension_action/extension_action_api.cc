@@ -151,7 +151,7 @@ ExtensionActionSetPopupFunction::RunExtensionAction() {
   const auto* path = args()[0].GetDict().FindString("popup");
   EXTENSION_FUNCTION_VALIDATE(path);
   const GURL url = path->empty() ? GURL() : extension()->GetResourceURL(*path);
-  if (!url.is_empty() && (!url.is_valid() ||
+  if (!path->empty() && (!url.is_valid() ||
       !extension()->origin().IsSameOriginWith(url::Origin::Create(url))))
     return RespondNow(Error("Popup must belong to this extension"));
   action_->SetPopupUrl(tab_id_, url);
