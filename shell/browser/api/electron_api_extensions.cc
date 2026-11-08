@@ -148,7 +148,8 @@ base::DictValue Extensions::GetActionState(gin_helper::ErrorThrower thrower,
                      ->GetExtensionAction(*extension);
   if (!action) return {};
   auto icon = action->GetExplicitlySetIcon(tab_id);
-  if (icon.IsEmpty()) icon = action->GetDefaultIconImage();
+  // Electron does not package Chrome's default icon placeholder resources.
+  // Leave the icon empty until the extension supplies explicit image data.
   const std::string icon_url = icon.IsEmpty() ? "" : extensions::GetIconUrlFromImage(icon).spec();
   return base::DictValue()
       .Set("icon", icon_url.size() <= 1024 * 1024 ? icon_url : "")
