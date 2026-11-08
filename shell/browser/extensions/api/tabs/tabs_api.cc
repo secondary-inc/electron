@@ -240,8 +240,8 @@ ExtensionFunction::ResponseAction TabsReloadFunction::Run() {
     bypass_cache = *params->reload_properties->bypass_cache;
   }
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -415,8 +415,8 @@ ExtensionFunction::ResponseAction TabsSetZoomFunction::Run() {
       tabs::SetZoom::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -438,12 +438,12 @@ ExtensionFunction::ResponseAction TabsSetZoomFunction::Run() {
 }
 
 ExtensionFunction::ResponseAction TabsGetZoomFunction::Run() {
-  std::optional<tabs::GetZoomSettings::Params> params =
-      tabs::GetZoomSettings::Params::Create(args());
+  std::optional<tabs::GetZoom::Params> params =
+      tabs::GetZoom::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -456,8 +456,8 @@ ExtensionFunction::ResponseAction TabsGetZoomSettingsFunction::Run() {
       tabs::GetZoomSettings::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -480,8 +480,8 @@ ExtensionFunction::ResponseAction TabsSetZoomSettingsFunction::Run() {
       tabs::SetZoomSettings::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -656,11 +656,12 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
       tabs::Update::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
+  const int tab_id = contents->ID();
   web_contents_ = contents->web_contents();
 
   if (params->update_properties.active.value_or(false) &&
@@ -673,6 +674,17 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
     web_contents_ = contents->web_contents();
     if (!IsElectronBrowserTabActive(contents))
       return RespondNow(Error("The browser could not activate this tab"));
+  }
+
+  if (params->update_properties.pinned &&
+      *params->update_properties.pinned != IsElectronBrowserTabPinned(web_contents_)) {
+    contents->Emit("browser-tab-pin", *params->update_properties.pinned);
+    contents = GetElectronTabById(tab_id, browser_context());
+    if (!contents)
+      return RespondNow(Error("The tab closed while changing its pin"));
+    web_contents_ = contents->web_contents();
+    if (IsElectronBrowserTabPinned(web_contents_) != *params->update_properties.pinned)
+      return RespondNow(Error("The browser could not change this tab's pin"));
   }
 
   // Navigate the tab to a new location if the url is different.

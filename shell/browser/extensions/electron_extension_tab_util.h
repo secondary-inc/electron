@@ -25,6 +25,9 @@ bool IsElectronBrowserTabActive(electron::api::WebContents* contents);
 int ElectronBrowserTabWindowId(content::WebContents* contents);
 int ElectronBrowserTabIndex(content::WebContents* contents);
 
+// Returns the unique selected tab in this profile; ambiguity fails closed.
+electron::api::WebContents* GetActiveElectronTab(content::BrowserContext* browser_context);
+
 // Resolves |tab_id| to an electron::api::WebContents only if the underlying
 // WebContents belongs to |browser_context|. Tabs in other BrowserContexts are
 // treated as nonexistent so that an extension loaded into one Session cannot

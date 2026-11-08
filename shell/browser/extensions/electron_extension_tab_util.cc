@@ -88,6 +88,19 @@ int ElectronBrowserTabIndex(content::WebContents* contents) {
   return state ? state->index : -1;
 }
 
+electron::api::WebContents* GetActiveElectronTab(content::BrowserContext* context) {
+  electron::api::WebContents* selected = nullptr;
+  for (auto* tab : electron::api::WebContents::GetWebContentsList()) {
+    if (!tab || !tab->web_contents() ||
+        tab->web_contents()->GetBrowserContext() != context ||
+        !IsElectronBrowserTab(tab->web_contents()) ||
+        !IsElectronBrowserTabActive(tab)) continue;
+    if (selected) return nullptr;
+    selected = tab;
+  }
+  return selected;
+}
+
 electron::api::WebContents* GetElectronTabById(
     int tab_id,
     content::BrowserContext* browser_context) {
