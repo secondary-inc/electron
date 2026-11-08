@@ -5,7 +5,7 @@
 #include "extensions/browser/extension_function.h"
 namespace extensions {
 base::DictValue ReadWorkContextMenus(content::BrowserContext* context, const std::string& id);
-void WriteWorkContextMenus(content::BrowserContext* context, const std::string& id, base::DictValue state);
+void WriteWorkContextMenus(content::BrowserContext* context, const std::string& id, base::DictValue state, std::string preferred_radio = {});
 std::string WorkContextMenuKey(const base::Value& id);
 bool WorkContextMenuMatches(const base::DictValue& item, const base::DictValue& details);
 class ContextMenusCreateFunction : public ExtensionFunction {

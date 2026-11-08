@@ -220,12 +220,14 @@ void Extensions::ClickContextMenu(
   for (const auto* field : {"linkUrl", "srcUrl", "selectionText", "mediaType"})
     if (const auto* value = details.FindString(field); value && !value->empty() && value->size() <= 8192)
       info.Set(field, *value);
-  if (*item->FindString("type") == "checkbox") {
+  const bool radio = *item->FindString("type") == "radio";
+  if (*item->FindString("type") == "checkbox" || radio) {
     const bool previous = item->FindBool("checked").value_or(false);
-    info.Set("wasChecked", previous); info.Set("checked", !previous);
+    const bool checked = radio || !previous;
+    info.Set("wasChecked", previous); info.Set("checked", checked);
     auto state = extensions::ReadWorkContextMenus(browser_context(), extension_id);
-    state.FindDict("items")->FindDict(key)->Set("checked", !previous);
-    extensions::WriteWorkContextMenus(browser_context(), extension_id, std::move(state));
+    state.FindDict("items")->FindDict(key)->Set("checked", checked);
+    extensions::WriteWorkContextMenus(browser_context(), extension_id, std::move(state), radio ? key : "");
   }
   extensions::ActiveTabPermissionGranter::CreateForWebContents(contents, tab_id, browser_context());
   extensions::ActiveTabPermissionGranter::FromWebContents(contents)->GrantIfRequested(extension);

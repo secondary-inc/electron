@@ -2,6 +2,9 @@
 // Use of this source code is governed by the MIT license.
 #include "shell/browser/extensions/api/context_menus/context_menus_api.h"
 #include <set>
+#include <map>
+#include <vector>
+#include <algorithm>
 #include "base/strings/string_number_conversions.h"
 #include "base/json/json_writer.h"
 #include "extensions/browser/pref_types.h"
@@ -34,8 +37,8 @@ bool MatchesPatterns(const base::ListValue* patterns, const std::string& url) {
 std::string Validate(base::DictValue& item, const base::DictValue& items, const std::string& key) {
   const auto* type = item.FindString("type");
   if (!type) { item.Set("type", "normal"); type = item.FindString("type"); }
-  if (*type != "normal" && *type != "separator" && *type != "checkbox")
-    return "This runtime supports normal, checkbox and separator website menu items";
+  if (*type != "normal" && *type != "separator" && *type != "checkbox" && *type != "radio")
+    return "Unsupported menu item type";
   const auto* title = item.FindString("title");
   if (*type != "separator" && (!title || title->empty() || title->size() > 1000))
     return "A bounded nonempty menu title is required";
@@ -103,7 +106,32 @@ base::DictValue ReadWorkContextMenus(content::BrowserContext* context, const std
   }
   return base::DictValue().Set("revision", 0).Set("items", base::DictValue());
 }
-void WriteWorkContextMenus(content::BrowserContext* context, const std::string& id, base::DictValue state) {
+void WriteWorkContextMenus(content::BrowserContext* context, const std::string& id, base::DictValue state, std::string preferred_radio) {
+  // Chromium groups adjacent radio siblings; normal items and separators split runs.
+  auto* items = state.FindDict("items");
+  using Entry = std::pair<std::string, base::DictValue*>;
+  std::map<std::string, std::vector<Entry>> siblings;
+  for (const auto [key, value] : *items) {
+    const auto* parent = value.GetDict().Find("parentId");
+    siblings[parent ? WorkContextMenuKey(*parent) : ""].emplace_back(key, items->FindDict(key));
+  }
+  for (auto& [parent, entries] : siblings) {
+    std::stable_sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+      return a.second->FindInt("order").value_or(0) < b.second->FindInt("order").value_or(0);
+    });
+    for (size_t start = 0; start < entries.size();) {
+      if (*entries[start].second->FindString("type") != "radio") { ++start; continue; }
+      size_t end = start, selected = start;
+      bool preferred = false;
+      while (end < entries.size() && *entries[end].second->FindString("type") == "radio") {
+        if (entries[end].first == preferred_radio) { selected = end; preferred = true; }
+        else if (!preferred && entries[end].second->FindBool("checked").value_or(false)) selected = end;
+        ++end;
+      }
+      for (size_t i = start; i < end; ++i) entries[i].second->Set("checked", i == selected);
+      start = end;
+    }
+  }
   const int previous = state.FindInt("revision").value_or(0);
   state.Set("revision", previous >= 2000000000 ? 1 : previous + 1);
   ExtensionPrefs::Get(context)->UpdateExtensionPref(id, kPref, base::Value(std::move(state)));
@@ -149,8 +177,9 @@ ExtensionFunction::ResponseAction ContextMenusCreateFunction::Run() {
   auto error = Validate(item, *items, key);
   if (!error.empty()) return RespondNow(Error(error));
   item.Set("order", state.FindInt("revision").value_or(0));
+  const bool select_radio = *item.FindString("type") == "radio" && item.FindBool("checked").value_or(false);
   items->Set(key, std::move(item));
-  WriteWorkContextMenus(browser_context(), extension_id(), std::move(state));
+  WriteWorkContextMenus(browser_context(), extension_id(), std::move(state), select_radio ? key : "");
   return RespondNow(NoArguments());
 }
 ExtensionFunction::ResponseAction ContextMenusUpdateFunction::Run() {
@@ -165,6 +194,10 @@ ExtensionFunction::ResponseAction ContextMenusUpdateFunction::Run() {
     if (name != "id" && name != "order" && name != "generatedId") item.Set(name, value.Clone());
   auto error = Validate(item, *items, key);
   if (!error.empty()) return RespondNow(Error(error));
+  const bool is_radio = *item.FindString("type") == "radio";
+  if (is_radio && args()[1].GetDict().FindBool("checked") == false)
+    item.Set("checked", existing->FindBool("checked").value_or(false));
+  const bool select_radio = is_radio && item.FindBool("checked").value_or(false);
   items->Set(key, std::move(item));
   // Reparenting or changing a parent type must not invalidate descendants.
   for (const auto [child_key, value] : *items) {
@@ -172,7 +205,7 @@ ExtensionFunction::ResponseAction ContextMenusUpdateFunction::Run() {
     error = Validate(child, *items, child_key);
     if (!error.empty()) return RespondNow(Error(error));
   }
-  WriteWorkContextMenus(browser_context(), extension_id(), std::move(state));
+  WriteWorkContextMenus(browser_context(), extension_id(), std::move(state), select_radio ? key : "");
   return RespondNow(NoArguments());
 }
 ExtensionFunction::ResponseAction ContextMenusRemoveFunction::Run() {
