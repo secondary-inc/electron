@@ -6,6 +6,16 @@
 
 #include <utility>
 
+#include "base/functional/bind.h"
+#include "base/memory/ref_counted.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/permissions/permissions_updater.h"
+#include "shell/browser/api/electron_api_web_contents.h"
+#include "shell/browser/extensions/electron_extension_tab_util.h"
+#include "shell/common/gin_converters/callback_converter.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
@@ -14,6 +24,21 @@
 #include "shell/common/extensions/api/permissions.h"
 
 namespace extensions {
+namespace {
+void DispatchPermissionChange(content::BrowserContext* context,
+                              const Extension* extension,
+                              const PermissionSet& changed, bool added) {
+  if (!context || changed.IsEmpty() ||
+      ExtensionRegistry::Get(context)->enabled_extensions().GetByID(extension->id()) != extension)
+    return;
+  auto packed = permissions_api_helpers::PackPermissionSet(changed);
+  base::ListValue args;
+  args.Append(packed->ToValue());
+  EventRouter::Get(context)->DispatchEventToExtension(extension->id(),
+      std::make_unique<Event>(added ? events::PERMISSIONS_ON_ADDED : events::PERMISSIONS_ON_REMOVED,
+          added ? "permissions.onAdded" : "permissions.onRemoved", std::move(args), context));
+}
+}  // namespace
 
 ExtensionFunction::ResponseAction PermissionsContainsFunction::Run() {
   auto params = api::permissions::Contains::Params::Create(args());
@@ -52,17 +77,86 @@ ExtensionFunction::ResponseAction PermissionsGetAllFunction::Run() {
 ExtensionFunction::ResponseAction PermissionsRequestFunction::Run() {
   auto params = api::permissions::Request::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
-  // No implicit grants. Mutation needs a trusted embedder consent UI and
-  // synchronized permission persistence, renderer updates and event dispatch.
-  return RespondNow(Error(
-      "Optional extension permission requests are not supported by this host"));
+  if (!user_gesture())
+    return RespondNow(Error("This function must be called during a user gesture"));
+  std::string error;
+  auto unpacked = permissions_api_helpers::UnpackPermissionSet(
+      params->permissions, PermissionsParser::GetRequiredPermissions(extension()),
+      PermissionsParser::GetOptionalPermissions(extension()),
+      ExtensionPrefs::Get(browser_context())->AllowFileAccess(extension_id()), &error);
+  if (!unpacked) return RespondNow(Error(std::move(error)));
+  if (!unpacked->unlisted_apis.empty() || !unpacked->unlisted_hosts.is_empty() ||
+      !unpacked->restricted_file_scheme_patterns.is_empty())
+    return RespondNow(Error("Only declared optional permissions with allowed file access may be requested"));
+  auto requested = std::make_unique<const PermissionSet>(
+      std::move(unpacked->optional_apis), ManifestPermissionSet(),
+      std::move(unpacked->optional_explicit_hosts), URLPatternSet());
+  auto missing = PermissionSet::CreateDifference(
+      *requested, extension()->permissions_data()->active_permissions());
+  if (missing->IsEmpty())
+    return RespondNow(ArgumentList(api::permissions::Request::Results::Create(true)));
+  auto* tab = GetActiveElectronTab(browser_context());
+  if (!tab || ElectronBrowserTabWindowId(tab->web_contents()) < 0)
+    return RespondNow(ArgumentList(api::permissions::Request::Results::Create(false)));
+  auto details = permissions_api_helpers::PackPermissionSet(*missing)->ToValue();
+  using Pending = base::RefCountedData<base::OnceCallback<void(bool)>>;
+  auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
+      [](scoped_refptr<PermissionsRequestFunction> function,
+         std::unique_ptr<const PermissionSet> requested, bool allow) {
+        auto* context = function->browser_context();
+        if (!allow || !context ||
+            ExtensionRegistry::Get(context)->enabled_extensions().GetByID(function->extension_id()) != function->extension()) {
+          function->Respond(function->ArgumentList(api::permissions::Request::Results::Create(false)));
+          return;
+        }
+        auto changed = PermissionSet::CreateDifference(
+            *requested, function->extension()->permissions_data()->active_permissions());
+        auto notify = changed->Clone();
+        PermissionsUpdater(context).GrantOptionalPermissions(*function->extension(), *changed,
+            base::BindOnce([](scoped_refptr<PermissionsRequestFunction> function,
+                              std::unique_ptr<const PermissionSet> changed) {
+              DispatchPermissionChange(function->browser_context(), function->extension(), *changed, true);
+              function->Respond(function->ArgumentList(api::permissions::Request::Results::Create(true)));
+            }, function, std::move(notify)));
+      }, scoped_refptr<PermissionsRequestFunction>(this), std::move(missing)));
+  auto respond = base::BindRepeating([](scoped_refptr<Pending> pending, bool allow) {
+    if (pending->data) std::move(pending->data).Run(allow);
+  }, pending);
+  if (!tab->Emit("browser-extension-permissions", extension_id(), std::move(details), respond))
+    respond.Run(false);
+  if (pending->data)
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(respond, false), base::Minutes(2));
+  return did_respond() ? AlreadyResponded() : RespondLater();
 }
 
 ExtensionFunction::ResponseAction PermissionsRemoveFunction::Run() {
   auto params = api::permissions::Remove::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
-  return RespondNow(Error(
-      "Extension permission removal is not supported by this host"));
+  std::string error;
+  auto unpacked = permissions_api_helpers::UnpackPermissionSet(
+      params->permissions, PermissionsParser::GetRequiredPermissions(extension()),
+      PermissionsParser::GetOptionalPermissions(extension()),
+      ExtensionPrefs::Get(browser_context())->AllowFileAccess(extension_id()), &error);
+  if (!unpacked) return RespondNow(Error(std::move(error)));
+  if (!unpacked->unlisted_apis.empty() || !unpacked->unlisted_hosts.is_empty())
+    return RespondNow(Error("Only declared optional permissions may be removed"));
+  if (!unpacked->required_apis.empty() || !unpacked->required_explicit_hosts.is_empty() ||
+      !unpacked->required_scriptable_hosts.is_empty())
+    return RespondNow(Error("You cannot remove required permissions."));
+  PermissionSet requested(std::move(unpacked->optional_apis), ManifestPermissionSet(),
+                          std::move(unpacked->optional_explicit_hosts), URLPatternSet());
+  auto changed = PermissionSet::CreateIntersection(
+      requested, extension()->permissions_data()->active_permissions());
+  auto notify = changed->Clone();
+  PermissionsUpdater(browser_context()).RevokeOptionalPermissions(
+      *extension(), *changed, PermissionsUpdater::RemoveType::kSoft,
+      base::BindOnce([](scoped_refptr<PermissionsRemoveFunction> function,
+                        std::unique_ptr<const PermissionSet> changed) {
+        DispatchPermissionChange(function->browser_context(), function->extension(), *changed, false);
+        function->Respond(function->ArgumentList(api::permissions::Remove::Results::Create(true)));
+      }, scoped_refptr<PermissionsRemoveFunction>(this), std::move(notify)));
+  return did_respond() ? AlreadyResponded() : RespondLater();
 }
 
 }  // namespace extensions

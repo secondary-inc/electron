@@ -24,6 +24,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/pref_names.h"
+#include "extensions/browser/permissions/permissions_updater.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/file_util.h"
@@ -197,6 +198,7 @@ void ElectronExtensionLoader::FinishExtensionReload(
 
 void ElectronExtensionLoader::PreAddExtension(const Extension* extension,
                                               const Extension* old_extension) {
+  PermissionsUpdater(browser_context_).InitializePermissions(extension);
   if (old_extension)
     return;
 
