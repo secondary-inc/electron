@@ -6,6 +6,7 @@
 #define SHELL_BROWSER_EXTENSIONS_API_EXTENSION_ACTION_EXTENSION_ACTION_API_H_
 
 #include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "base/observer_list.h"
 #include "extensions/browser/extension_action.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/browser/extension_host_registry.h"
@@ -46,13 +47,13 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
   GetFactoryInstance();
 
   // Add or remove observers.
-  void AddObserver(Observer* observer) {}
-  void RemoveObserver(Observer* observer) {}
+  void AddObserver(Observer* observer) { observers_.AddObserver(observer); }
+  void RemoveObserver(Observer* observer) { observers_.RemoveObserver(observer); }
 
   // Notifies that there has been a change in the given |extension_action|.
   void NotifyChange(ExtensionAction* extension_action,
                     content::WebContents* web_contents,
-                    content::BrowserContext* browser_context) {}
+                    content::BrowserContext* browser_context);
 
   // Dispatches the onClicked event for extension that owns the given action.
   void DispatchExtensionActionClicked(const ExtensionAction& extension_action,
@@ -61,10 +62,11 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
 
   // Clears the values for all ExtensionActions for the tab associated with the
   // given |web_contents| (and signals that page actions changed).
-  void ClearAllValuesForTab(content::WebContents* web_contents) {}
+  void ClearAllValuesForTab(content::WebContents* web_contents);
 
  private:
   friend class BrowserContextKeyedAPIFactory<ExtensionActionAPI>;
+  base::ObserverList<Observer>::Unchecked observers_;
 
   // BrowserContextKeyedAPI implementation.
   void Shutdown() override;
@@ -82,6 +84,9 @@ class ExtensionActionFunction : public ExtensionFunction {
   ResponseAction Run() override;
 
   virtual ResponseAction RunExtensionAction() = 0;
+  void NotifyActionChange();
+  raw_ptr<ExtensionAction> action_ = nullptr;
+  int tab_id_ = -1;
 };
 
 //

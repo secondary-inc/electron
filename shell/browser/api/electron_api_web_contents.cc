@@ -204,6 +204,7 @@
 #include "extensions/common/mojom/view_type.mojom.h"
 #include "shell/browser/extensions/electron_extension_web_contents_observer.h"
 #include "shell/browser/extensions/electron_extension_tab_util.h"
+#include "shell/browser/extensions/api/extension_action/extension_action_api.h"
 #endif
 
 #if BUILDFLAG(ENABLE_PRINTING)
@@ -2747,6 +2748,11 @@ content::WebContents* WebContents::GetDevToolsWebContents() const {
 }
 
 void WebContents::WebContentsDestroyed() {
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  if (extensions::ElectronBrowserTabWindowId(web_contents()) >= 0)
+    extensions::ExtensionActionAPI::Get(web_contents()->GetBrowserContext())
+        ->ClearAllValuesForTab(web_contents());
+#endif
   // Drop this instance's contribution to the process-wide caret browsing count.
   ReconcileCaretBrowsingCount(false);
 

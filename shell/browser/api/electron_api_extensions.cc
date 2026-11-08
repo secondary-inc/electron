@@ -6,6 +6,9 @@
 
 #include "chrome/browser/browser_process.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_action_manager.h"
+#include "shell/browser/extensions/electron_extension_tab_util.h"
+#include "shell/browser/api/electron_api_web_contents.h"
 #include "gin/data_object_builder.h"
 #include "gin/object_template_builder.h"
 #include "shell/browser/electron_browser_context.h"
@@ -29,9 +32,12 @@ const gin::WrapperInfo Extensions::kWrapperInfo =
 Extensions::Extensions(ElectronBrowserContext* browser_context)
     : browser_context_{browser_context} {
   extensions::ExtensionRegistry::Get(browser_context)->AddObserver(this);
+  action_api_ = extensions::ExtensionActionAPI::Get(browser_context);
+  action_api_->AddObserver(this);
 }
 
 Extensions::~Extensions() {
+  if (action_api_) action_api_->RemoveObserver(this);
   extensions::ExtensionRegistry::Get(browser_context())->RemoveObserver(this);
 }
 
@@ -123,6 +129,36 @@ v8::Local<v8::Value> Extensions::GetAllExtensions(v8::Isolate* isolate) {
   return gin::ConvertToV8(isolate, extensions_vector);
 }
 
+base::DictValue Extensions::GetActionState(gin_helper::ErrorThrower thrower,
+                                            const std::string& extension_id,
+                                            int tab_id) {
+  auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                        ->enabled_extensions().GetByID(extension_id);
+  if (!extension || (tab_id != -1 &&
+      !extensions::GetElectronTabById(tab_id, browser_context()))) {
+    thrower.ThrowError("Extension or tab not found in this profile");
+    return {};
+  }
+  auto* action = extensions::ExtensionActionManager::Get(browser_context())
+                     ->GetExtensionAction(*extension);
+  if (!action) return {};
+  return base::DictValue()
+      .Set("title", action->GetTitle(tab_id))
+      .Set("popup", action->GetPopupUrl(tab_id).spec())
+      .Set("badgeText", action->GetDisplayBadgeText(tab_id))
+      .Set("enabled", action->GetIsVisibleIgnoringDeclarative(tab_id));
+}
+void Extensions::OnExtensionActionUpdated(extensions::ExtensionAction* action,
+                                           content::WebContents* contents,
+                                           content::BrowserContext* context) {
+  if (context != browser_context()) return;
+  auto* tab = contents ? WebContents::From(contents) : nullptr;
+  Emit("action-updated", action->extension_id(), tab ? tab->ID() : -1);
+}
+void Extensions::OnExtensionActionAPIShuttingDown() {
+  action_api_ = nullptr;
+}
+
 void Extensions::OnExtensionLoaded(content::BrowserContext* browser_context,
                                    const extensions::Extension* extension) {
   Emit("extension-loaded", extension);
@@ -148,7 +184,8 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("loadExtension", &Extensions::LoadExtension)
       .SetMethod("removeExtension", &Extensions::RemoveExtension)
       .SetMethod("getExtension", &Extensions::GetExtension)
-      .SetMethod("getAllExtensions", &Extensions::GetAllExtensions);
+      .SetMethod("getAllExtensions", &Extensions::GetAllExtensions)
+      .SetMethod("getActionState", &Extensions::GetActionState);
 }
 
 const gin::WrapperInfo* Extensions::wrapper_info() const {

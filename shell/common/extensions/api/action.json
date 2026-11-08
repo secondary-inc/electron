@@ -47,7 +47,6 @@
     "functions": [
       {
         "name": "setTitle",
-        "deprecated": "chrome.action.setTitle is not supported in Electron",
         "type": "function",
         "description": "Sets the title of the action. This shows up in the tooltip.",
         "parameters": [
@@ -76,7 +75,6 @@
       },
       {
         "name": "getTitle",
-        "deprecated": "chrome.action.getTitle is not supported in Electron",
         "type": "function",
         "description": "Gets the title of the action.",
         "parameters": [
@@ -152,7 +150,6 @@
       },
       {
         "name": "setPopup",
-        "deprecated": "chrome.action.setPopup is not supported in Electron",
         "type": "function",
         "description": "Sets the HTML document to be opened as a popup when the user clicks on the action's icon.",
         "parameters": [
@@ -181,7 +178,6 @@
       },
       {
         "name": "getPopup",
-        "deprecated": "chrome.action.getPopup is not supported in Electron",
         "type": "function",
         "description": "Gets the html document set as the popup for this action.",
         "parameters": [
@@ -202,7 +198,6 @@
       },
       {
         "name": "setBadgeText",
-        "deprecated": "chrome.action.setBadgeText is not supported in Electron",
         "type": "function",
         "description": "Sets the badge text for the action. The badge is displayed on top of the icon.",
         "parameters": [
@@ -232,7 +227,6 @@
       },
       {
         "name": "getBadgeText",
-        "deprecated": "chrome.action.getBadgeText is not supported in Electron",
         "type": "function",
         "description": "Gets the badge text of the action. If no tab is specified, the non-tab-specific badge text is returned. If <a href='declarativeNetRequest#setExtensionActionOptions'>displayActionCountAsBadgeText</a> is enabled, a placeholder text will be returned unless the <a href='declare_permissions#declarativeNetRequestFeedback'>declarativeNetRequestFeedback</a> permission is present or tab-specific badge text was provided.",
         "parameters": [
@@ -367,7 +361,6 @@
       },
       {
         "name": "enable",
-        "deprecated": "chrome.action.enable is not supported in Electron",
         "type": "function",
         "description": "Enables the action for a tab. By default, actions are enabled.",
         "parameters": [
@@ -387,7 +380,6 @@
       },
       {
         "name": "disable",
-        "deprecated": "chrome.action.disable is not supported in Electron",
         "type": "function",
         "description": "Disables the action for a tab.",
         "parameters": [
@@ -407,7 +399,6 @@
       },
       {
         "name": "isEnabled",
-        "deprecated": "chrome.action.isEnabled is not supported in Electron",
         "type": "function",
         "description": "Indicates whether the extension action is enabled for a tab (or globally if no <code>tabId</code> is provided). Actions enabled using only $(ref:declarativeContent) always return false.",
         "parameters": [

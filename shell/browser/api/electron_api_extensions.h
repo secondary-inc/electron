@@ -6,6 +6,9 @@
 #define ELECTRON_SHELL_BROWSER_API_ELECTRON_API_EXTENSIONS_H_
 
 #include "base/memory/raw_ptr.h"
+#include "base/values.h"
+#include "shell/browser/extensions/api/extension_action/extension_action_api.h"
+#include "shell/common/gin_helper/error_thrower.h"
 #include "extensions/browser/extension_registry_observer.h"
 #include "gin/wrappable.h"
 #include "shell/browser/event_emitter_mixin.h"
@@ -18,7 +21,8 @@ namespace api {
 
 class Extensions final : public gin::Wrappable<Extensions>,
                          public gin_helper::EventEmitterMixin<Extensions>,
-                         private extensions::ExtensionRegistryObserver {
+                          private extensions::ExtensionRegistryObserver,
+                          private extensions::ExtensionActionAPI::Observer {
  public:
   static Extensions* Create(v8::Isolate* isolate,
                             ElectronBrowserContext* browser_context);
@@ -42,6 +46,12 @@ class Extensions final : public gin::Wrappable<Extensions>,
   v8::Local<v8::Value> GetExtension(v8::Isolate* isolate,
                                     const std::string& extension_id);
   v8::Local<v8::Value> GetAllExtensions(v8::Isolate* isolate);
+  base::DictValue GetActionState(gin_helper::ErrorThrower thrower,
+                                 const std::string& extension_id, int tab_id);
+  void OnExtensionActionUpdated(extensions::ExtensionAction* action,
+                                content::WebContents* contents,
+                                content::BrowserContext* context) override;
+  void OnExtensionActionAPIShuttingDown() override;
 
   // extensions::ExtensionRegistryObserver:
   void OnExtensionLoaded(content::BrowserContext* browser_context,
@@ -62,6 +72,7 @@ class Extensions final : public gin::Wrappable<Extensions>,
   }
 
   const raw_ptr<content::BrowserContext> browser_context_;
+  raw_ptr<extensions::ExtensionActionAPI> action_api_ = nullptr;
 };
 
 }  // namespace api
