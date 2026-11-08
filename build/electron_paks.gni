@@ -38,6 +38,11 @@ template("electron_repack_percent") {
       deps += [ "//ui/views/resources" ]
     }
 
+    if (enable_electron_extensions) {
+      sources += [ "$root_gen_dir/extensions/extensions_browser_resources_${percent}_percent.pak" ]
+      deps += [ "//extensions:extensions_browser_resources" ]
+    }
+
     output = "${invoker.output_dir}/chrome_${percent}_percent.pak"
   }
 }
