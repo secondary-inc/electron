@@ -123,11 +123,21 @@ v8::Local<v8::Promise> Extensions::RevokeOptionalPermissions(
     promise.RejectWithErrorMessage("Enabled extension not found in this profile");
     return handle;
   }
-  const auto optional = extensions::PermissionSet::CreateDifference(
-      extensions::PermissionsParser::GetOptionalPermissions(extension),
-      extensions::PermissionsParser::GetRequiredPermissions(extension));
+  auto stored = extension->permissions_data()->active_permissions().Clone();
+  auto* prefs = extensions::ExtensionPrefs::Get(browser_context());
+  if (auto granted = prefs->GetGrantedPermissions(extension_id))
+    stored = extensions::PermissionSet::CreateUnion(*stored, *granted);
+  if (auto granted = prefs->GetRuntimeGrantedPermissions(extension_id))
+    stored = extensions::PermissionSet::CreateUnion(*stored, *granted);
+  auto optional = extensions::PermissionSet::CreateIntersection(
+      *stored, extensions::PermissionsParser::GetOptionalPermissions(extension));
+  optional = extensions::PermissionSet::CreateDifference(
+      *optional, extensions::PermissionsParser::GetRequiredPermissions(extension));
+  // Removal is exact-pattern subtraction. Include concrete grants made under
+  // broad optional declarations, but never subtract required patterns.
   auto changed = extensions::PermissionSet::CreateIntersection(
-      *optional, extension->permissions_data()->active_permissions());
+      *optional, extension->permissions_data()->active_permissions(),
+      extensions::URLPatternSet::IntersectionBehavior::kStringComparison);
   base::ListValue args;
   args.Append(extensions::permissions_api_helpers::PackPermissionSet(*changed)->ToValue());
   const bool notify = !changed->IsEmpty();
