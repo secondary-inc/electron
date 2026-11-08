@@ -25,6 +25,9 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/permissions/permissions_updater.h"
+#include "extensions/browser/permissions_manager.h"
+#include "extensions/browser/extension_util.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/file_util.h"
@@ -198,7 +201,18 @@ void ElectronExtensionLoader::FinishExtensionReload(
 
 void ElectronExtensionLoader::PreAddExtension(const Extension* extension,
                                               const Extension* old_extension) {
-  PermissionsUpdater(browser_context_).InitializePermissions(extension);
+  // Electron has no ExtensionManagementClient. The normal initializer
+  // dereferences that Chrome policy client. Restore bounded desired permissions
+  // here, then use the core transient initializer for host withholding.
+  auto desired = PermissionsManager::Get(browser_context_)
+                     ->GetBoundedExtensionDesiredPermissions(*extension);
+  ExtensionPrefs::Get(browser_context_)
+      ->SetDesiredActivePermissions(extension->id(), *desired);
+  extension->permissions_data()->SetContextId(util::GetBrowserContextId(browser_context_));
+  extension->permissions_data()->SetPermissions(
+      std::move(desired), std::make_unique<PermissionSet>());
+  PermissionsUpdater(browser_context_, PermissionsUpdater::InitFlag::kTransient)
+      .InitializePermissions(extension);
   if (old_extension)
     return;
 
