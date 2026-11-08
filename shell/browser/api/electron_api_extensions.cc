@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "shell/browser/api/electron_api_extensions.h"
+#include <algorithm>
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
 #include "extensions/browser/extension_prefs.h"
 
@@ -106,6 +107,27 @@ v8::Local<v8::Promise> Extensions::LoadExtension(
           std::move(promise)));
 
   return handle;
+}
+
+void Extensions::ClearPermissionGrants(gin_helper::ErrorThrower thrower,
+                                      const std::string& extension_id) {
+  if (extension_id.size() != 32 ||
+      !std::all_of(extension_id.begin(), extension_id.end(),
+                   [](char c) { return c >= 'a' && c <= 'p'; })) {
+    thrower.ThrowTypeError("Invalid extension ID");
+    return;
+  }
+  if (extensions::ExtensionRegistry::Get(browser_context())
+          ->enabled_extensions().Contains(extension_id)) {
+    thrower.ThrowError("Unload the extension before clearing grants");
+    return;
+  }
+  auto* prefs = extensions::ExtensionPrefs::Get(browser_context());
+  prefs->SetDesiredActivePermissions(extension_id, extensions::PermissionSet());
+  if (auto granted = prefs->GetGrantedPermissions(extension_id))
+    prefs->RemoveGrantedPermissions(extension_id, *granted);
+  if (auto runtime = prefs->GetRuntimeGrantedPermissions(extension_id))
+    prefs->RemoveRuntimeGrantedPermissions(extension_id, *runtime);
 }
 
 void Extensions::RemoveExtension(const std::string& extension_id) {
@@ -308,6 +330,7 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
              isolate)
       .SetMethod("loadExtension", &Extensions::LoadExtension)
       .SetMethod("removeExtension", &Extensions::RemoveExtension)
+      .SetMethod("clearPermissionGrants", &Extensions::ClearPermissionGrants)
       .SetMethod("getExtension", &Extensions::GetExtension)
       .SetMethod("getAllExtensions", &Extensions::GetAllExtensions)
       .SetMethod("getActionState", &Extensions::GetActionState)
