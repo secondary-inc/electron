@@ -6,6 +6,9 @@
 #include <algorithm>
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/common/manifest_handlers/permissions_parser.h"
+#include "shell/browser/extensions/api/permissions/permissions_api_helpers.h"
+#include "shell/common/extensions/api/permissions.h"
 
 #include "chrome/browser/browser_process.h"
 #include "extensions/browser/extension_registry.h"
@@ -107,6 +110,24 @@ v8::Local<v8::Promise> Extensions::LoadExtension(
           std::move(promise)));
 
   return handle;
+}
+
+base::DictValue Extensions::GetPermissionState(gin_helper::ErrorThrower thrower,
+                                                const std::string& extension_id) {
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  if (!extension) {
+    thrower.ThrowError("Enabled extension not found in this profile");
+    return {};
+  }
+  const auto pack = [](const extensions::PermissionSet& set) {
+    return extensions::permissions_api_helpers::PackPermissionSet(set)->ToValue();
+  };
+  base::DictValue state;
+  state.Set("active", pack(extension->permissions_data()->active_permissions()));
+  state.Set("required", pack(extensions::PermissionsParser::GetRequiredPermissions(extension)));
+  state.Set("optional", pack(extensions::PermissionsParser::GetOptionalPermissions(extension)));
+  return state;
 }
 
 void Extensions::ClearPermissionGrants(gin_helper::ErrorThrower thrower,
@@ -331,6 +352,7 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("loadExtension", &Extensions::LoadExtension)
       .SetMethod("removeExtension", &Extensions::RemoveExtension)
       .SetMethod("clearPermissionGrants", &Extensions::ClearPermissionGrants)
+      .SetMethod("getPermissionState", &Extensions::GetPermissionState)
       .SetMethod("getExtension", &Extensions::GetExtension)
       .SetMethod("getAllExtensions", &Extensions::GetAllExtensions)
       .SetMethod("getActionState", &Extensions::GetActionState)

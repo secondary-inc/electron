@@ -43,6 +43,8 @@ class Extensions final : public gin::Wrappable<Extensions>,
                                        const base::FilePath& extension_path,
                                        gin::Arguments* args);
   void RemoveExtension(const std::string& extension_id);
+  base::DictValue GetPermissionState(gin_helper::ErrorThrower thrower,
+                                     const std::string& extension_id);
   void ClearPermissionGrants(gin_helper::ErrorThrower thrower,
                              const std::string& extension_id);
   v8::Local<v8::Value> GetExtension(v8::Isolate* isolate,
