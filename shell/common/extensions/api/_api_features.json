@@ -11,6 +11,11 @@
 // renderer.
 
 {
+  "contextMenus": {
+    "channel": "stable",
+    "dependencies": ["permission:contextMenus"],
+    "contexts": ["privileged_extension"]
+  },
   "browserAction": {
     "dependencies": ["manifest:browser_action"],
     "contexts": ["privileged_extension"]

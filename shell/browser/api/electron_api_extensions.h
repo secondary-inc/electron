@@ -45,6 +45,12 @@ class Extensions final : public gin::Wrappable<Extensions>,
   void RemoveExtension(const std::string& extension_id);
   v8::Local<v8::Promise> RevokeOptionalPermissions(v8::Isolate* isolate,
                                                  const std::string& extension_id);
+  base::DictValue GetContextMenuState(gin_helper::ErrorThrower thrower,
+                                      const std::string& extension_id, int tab_id,
+                                      base::DictValue details);
+  void ClickContextMenu(gin_helper::ErrorThrower thrower,
+                        const std::string& extension_id, int tab_id,
+                        int revision, const std::string& key, base::DictValue details);
   base::DictValue GetPermissionState(gin_helper::ErrorThrower thrower,
                                      const std::string& extension_id);
   void ClearPermissionGrants(gin_helper::ErrorThrower thrower,

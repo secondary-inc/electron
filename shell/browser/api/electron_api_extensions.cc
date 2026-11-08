@@ -4,9 +4,11 @@
 
 #include "shell/browser/api/electron_api_extensions.h"
 #include <algorithm>
+#include <set>
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
 #include "extensions/browser/permissions/permissions_updater.h"
 #include "extensions/browser/extension_prefs.h"
+#include "shell/browser/extensions/api/context_menus/context_menus_api.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "shell/browser/extensions/api/permissions/permissions_api_helpers.h"
 #include "shell/common/extensions/api/permissions.h"
@@ -161,6 +163,95 @@ v8::Local<v8::Promise> Extensions::RevokeOptionalPermissions(
   return handle;
 }
 
+base::DictValue Extensions::GetContextMenuState(
+    gin_helper::ErrorThrower thrower, const std::string& extension_id,
+    int tab_id, base::DictValue details) {
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  auto* tab = extensions::GetElectronTabById(tab_id, browser_context());
+  if (!extension || !tab || !extensions::IsElectronBrowserTabActive(tab) ||
+      extensions::ElectronBrowserTabWindowId(tab->web_contents()) < 0 ||
+      !extension->permissions_data()->HasAPIPermission(extensions::mojom::APIPermissionID::kContextMenus)) {
+    return {};
+  }
+  const auto& url = tab->web_contents()->GetLastCommittedURL();
+  if (!url.SchemeIsHTTPOrHTTPS()) return {};
+  details.Set("pageUrl", url.spec());
+  auto state = extensions::ReadWorkContextMenus(browser_context(), extension_id);
+  base::DictValue filtered;
+  for (const auto [key, item] : *state.FindDict("items"))
+    if (item.is_dict() && extensions::WorkContextMenuMatches(item.GetDict(), details))
+      filtered.Set(key, item.Clone());
+  state.Set("items", std::move(filtered));
+  return state;
+}
+
+void Extensions::ClickContextMenu(
+    gin_helper::ErrorThrower thrower, const std::string& extension_id,
+    int tab_id, int revision, const std::string& key, base::DictValue details) {
+  auto available = GetContextMenuState(thrower, extension_id, tab_id, details.Clone());
+  const auto* items = available.FindDict("items");
+  const auto* item = items ? items->FindDict(key) : nullptr;
+  if (!item || available.FindInt("revision") != revision ||
+      !item->FindBool("enabled").value_or(true) || *item->FindString("type") == "separator") {
+    thrower.ThrowError("Context menu changed or is unavailable");
+    return;
+  }
+  std::set<std::string> parents{key};
+  const auto* ancestor = item;
+  while (const auto* parent = ancestor->Find("parentId")) {
+    const auto parent_key = extensions::WorkContextMenuKey(*parent);
+    ancestor = items->FindDict(parent_key);
+    if (!ancestor || !ancestor->FindBool("enabled").value_or(true) || !parents.insert(parent_key).second) {
+      thrower.ThrowError("Context menu parent is unavailable");
+      return;
+    }
+  }
+  auto* tab = extensions::GetElectronTabById(tab_id, browser_context());
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  auto* contents = tab->web_contents();
+  base::DictValue info;
+  info.Set("menuItemId", item->Find("id")->Clone());
+  if (const auto* parent = item->Find("parentId")) info.Set("parentMenuItemId", parent->Clone());
+  info.Set("pageUrl", contents->GetLastCommittedURL().spec());
+  info.Set("frameId", 0);
+  info.Set("editable", details.FindBool("editable").value_or(false));
+  for (const auto* field : {"linkUrl", "srcUrl", "selectionText", "mediaType"})
+    if (const auto* value = details.FindString(field); value && !value->empty() && value->size() <= 8192)
+      info.Set(field, *value);
+  if (*item->FindString("type") == "checkbox") {
+    const bool previous = item->FindBool("checked").value_or(false);
+    info.Set("wasChecked", previous); info.Set("checked", !previous);
+    auto state = extensions::ReadWorkContextMenus(browser_context(), extension_id);
+    state.FindDict("items")->FindDict(key)->Set("checked", !previous);
+    extensions::WriteWorkContextMenus(browser_context(), extension_id, std::move(state));
+  }
+  extensions::ActiveTabPermissionGranter::CreateForWebContents(contents, tab_id, browser_context());
+  extensions::ActiveTabPermissionGranter::FromWebContents(contents)->GrantIfRequested(extension);
+  extensions::api::tabs::Tab value;
+  value.id = tab_id; value.active = true; value.selected = true; value.highlighted = true;
+  value.pinned = extensions::IsElectronBrowserTabPinned(contents);
+  value.window_id = extensions::ElectronBrowserTabWindowId(contents);
+  value.index = extensions::ElectronBrowserTabIndex(contents);
+  value.incognito = browser_context()->IsOffTheRecord();
+  value.group_id = -1; value.split_view_id = -1;
+  if (extension->permissions_data()->HasAPIPermissionForTab(tab_id, extensions::mojom::APIPermissionID::kTab) ||
+      extension->permissions_data()->HasHostPermission(contents->GetLastCommittedURL())) {
+    value.url = contents->GetLastCommittedURL().spec();
+    value.title = base::UTF16ToUTF8(contents->GetTitle());
+  }
+  base::ListValue args;
+  args.Append(std::move(info)); args.Append(value.ToValue());
+  for (bool legacy : {true, false}) {
+    auto event = std::make_unique<extensions::Event>(
+        legacy ? extensions::events::CONTEXT_MENUS : extensions::events::CONTEXT_MENUS_ON_CLICKED,
+        legacy ? "contextMenus" : "contextMenus.onClicked", args.Clone(), browser_context());
+    event->user_gesture = extensions::EventRouter::UserGestureState::kEnabled;
+    extensions::EventRouter::Get(browser_context())->DispatchEventToExtension(extension_id, std::move(event));
+  }
+}
+
 base::DictValue Extensions::GetPermissionState(gin_helper::ErrorThrower thrower,
                                                 const std::string& extension_id) {
   const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
@@ -193,6 +284,7 @@ void Extensions::ClearPermissionGrants(gin_helper::ErrorThrower thrower,
     return;
   }
   auto* prefs = extensions::ExtensionPrefs::Get(browser_context());
+  prefs->UpdateExtensionPref(extension_id, "iris_context_menus", std::nullopt);
   prefs->SetDesiredActivePermissions(extension_id, extensions::PermissionSet());
   if (auto granted = prefs->GetGrantedPermissions(extension_id))
     prefs->RemoveGrantedPermissions(extension_id, *granted);
@@ -402,6 +494,8 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("removeExtension", &Extensions::RemoveExtension)
       .SetMethod("clearPermissionGrants", &Extensions::ClearPermissionGrants)
       .SetMethod("getPermissionState", &Extensions::GetPermissionState)
+      .SetMethod("getContextMenuState", &Extensions::GetContextMenuState)
+      .SetMethod("clickContextMenu", &Extensions::ClickContextMenu)
       .SetMethod("revokeOptionalPermissions", &Extensions::RevokeOptionalPermissions)
       .SetMethod("getExtension", &Extensions::GetExtension)
       .SetMethod("getAllExtensions", &Extensions::GetAllExtensions)

@@ -36,6 +36,7 @@ constexpr APIPermissionInfo::InitInfo permissions_to_register[] = {
     {mojom::APIPermissionID::kPdfViewerPrivate, "pdfViewerPrivate"},
 #endif
     {mojom::APIPermissionID::kManagement, "management"},
+    {mojom::APIPermissionID::kContextMenus, "contextMenus"},
     {mojom::APIPermissionID::kFontSettings, "fontSettings",
      APIPermissionInfo::kFlagRequiresManagementUIWarning},
     {mojom::APIPermissionID::kTab, "tabs",
