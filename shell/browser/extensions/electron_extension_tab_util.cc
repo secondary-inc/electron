@@ -7,6 +7,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/browser_context.h"
 #include "base/supports_user_data.h"
+#include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/navigation_handle.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
+#include "shell/common/extensions/api/tabs.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "extensions/browser/extension_web_contents_observer.h"
@@ -29,6 +35,11 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
  public:
   explicit BrowserTabFrames(content::WebContents* contents)
       : content::WebContentsObserver(contents) {
+    last_url_ = contents->GetLastCommittedURL().spec();
+    last_title_ = base::UTF16ToUTF8(contents->GetTitle());
+    loading_ = contents->IsLoading();
+    muted_ = contents->IsAudioMuted();
+    audible_ = contents->IsCurrentlyAudible();
     zoom_ = electron::WebContentsZoomController::FromWebContents(contents);
     if (zoom_) {
       zoom_level_ = zoom_->GetZoomLevel();
@@ -71,10 +82,83 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
         events::TABS_ON_ZOOM_CHANGE, "tabs.onZoomChange", std::move(args),
         web_contents()->GetBrowserContext()));
   }
+  void DidStartLoading() override { Updated(); }
+  void DidStopLoading() override { Updated(); }
+  void TitleWasSet(content::NavigationEntry*) override { Updated(); }
+  void DidUpdateAudioMutingState(bool) override { Updated(); }
+  void OnAudioStateChanged(bool) override { Updated(); }
+  void DidFinishNavigation(content::NavigationHandle* navigation) override {
+    if (navigation->IsInPrimaryMainFrame() && navigation->HasCommitted()) Updated();
+  }
+  void Updated() {
+    auto* wc = web_contents();
+    if (!wc || !wc->GetUserData(kBrowserTabState)) return;
+    auto* contents = electron::api::WebContents::From(wc);
+    if (!contents) return;
+    const auto url = wc->GetLastCommittedURL();
+    const std::string title = base::UTF16ToUTF8(wc->GetTitle());
+    const bool loading = wc->IsLoading(), muted = wc->IsAudioMuted();
+    const bool audible = wc->IsCurrentlyAudible(), pinned = IsElectronBrowserTabPinned(wc);
+    base::DictValue changes;
+    if (url.spec() != last_url_) changes.Set("url", url.spec());
+    if (!loading && title != last_title_) changes.Set("title", title);
+    if (loading != loading_) changes.Set("status", loading ? "loading" : "complete");
+    if (pinned != pinned_) changes.Set("pinned", pinned);
+    if (audible != audible_) changes.Set("audible", audible);
+    if (muted != muted_) {
+      base::DictValue info;
+      info.Set("muted", muted);
+      changes.Set("mutedInfo", std::move(info));
+    }
+    last_url_ = url.spec();
+    if (!loading) last_title_ = title;
+    loading_ = loading; muted_ = muted; audible_ = audible; pinned_ = pinned;
+    if (changes.empty()) return;
+    auto* context = wc->GetBrowserContext();
+    auto* router = EventRouter::Get(context);
+    auto* registry = ExtensionRegistry::Get(context);
+    if (!router || !registry) return;
+    for (const auto& extension : registry->enabled_extensions()) {
+      if (!router->ExtensionHasEventListener(extension->id(), "tabs.onUpdated")) continue;
+      const bool privileged = extension->permissions_data()->HasAPIPermissionForTab(
+          contents->ID(), mojom::APIPermissionID::kTab) ||
+          extension->permissions_data()->HasHostPermission(url);
+      auto change = changes.Clone();
+      if (!privileged) { change.Remove("url"); change.Remove("title"); }
+      if (change.empty()) continue;
+      api::tabs::Tab tab;
+      tab.id = contents->ID();
+      tab.window_id = ElectronBrowserTabWindowId(wc);
+      tab.index = ElectronBrowserTabIndex(wc);
+      tab.active = IsElectronBrowserTabActive(contents);
+      tab.selected = tab.active; tab.highlighted = tab.active;
+      tab.pinned = pinned;
+      tab.incognito = context->IsOffTheRecord();
+      tab.group_id = -1; tab.split_view_id = -1;
+      tab.status = loading ? api::tabs::TabStatus::kLoading : api::tabs::TabStatus::kComplete;
+      tab.last_accessed = wc->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
+      tab.audible = audible;
+      api::tabs::MutedInfo info; info.muted = muted;
+      tab.muted_info = std::move(info);
+      if (privileged) {
+        tab.url = url.spec();
+        // Do not attribute a previous document\'s title to a new origin while loading.
+        if (!loading) tab.title = title;
+      }
+      base::ListValue args;
+      args.Append(contents->ID());
+      args.Append(std::move(change));
+      args.Append(tab.ToValue());
+      router->DispatchEventToExtension(extension->id(), std::make_unique<Event>(
+          events::TABS_ON_UPDATED, "tabs.onUpdated", std::move(args), context));
+    }
+  }
   void RenderFrameCreated(content::RenderFrameHost* frame) override {
     SetTabId(frame);
   }
  private:
+  std::string last_url_, last_title_;
+  bool loading_ = false, muted_ = false, audible_ = false, pinned_ = false;
   raw_ptr<electron::WebContentsZoomController> zoom_ = nullptr;
   double zoom_level_ = 0;
   electron::WebContentsZoomController::ZoomMode zoom_mode_ = electron::WebContentsZoomController::ZOOM_MODE_DEFAULT;
@@ -113,6 +197,7 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
   contents->SetUserData(kBrowserTabState, std::move(state));
   contents->GetBrowserContext()->SetUserData(
       kManagedBrowserContext, std::make_unique<BrowserTabState>());
+  static_cast<BrowserTabFrames*>(contents->GetUserData(kBrowserTabFrames))->Updated();
   if (activated && window_id >= 0) {
     auto* tab = electron::api::WebContents::From(contents);
     auto* router = EventRouter::Get(contents->GetBrowserContext());

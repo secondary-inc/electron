@@ -678,7 +678,6 @@
       },
       {
         "name": "onUpdated",
-        "deprecated": "chrome.tabs.onUpdated is not current supported in Electron",
         "type": "function",
         "description": "Fired when a tab is updated.",
         "parameters": [
