@@ -274,6 +274,8 @@ ActionOpenPopupFunction::RunExtensionAction() {
 
 ExtensionFunction::ResponseAction
 ExtensionActionOpenPopupFunction::RunExtensionAction() {
+  if (name() == "browserAction.openPopup" && !user_gesture())
+    return RespondNow(Error("Legacy popup opening requires a user gesture"));
   auto* tab = GetActiveElectronTab(browser_context());
   if (!tab || ElectronBrowserTabWindowId(tab->web_contents()) < 0)
     return RespondNow(Error("No active managed browser window"));

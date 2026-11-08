@@ -11,6 +11,15 @@
 // renderer.
 
 {
+  "browserAction": {
+    "dependencies": ["manifest:browser_action"],
+    "contexts": ["privileged_extension"]
+  },
+  "browserAction.openPopup": {
+    "channel": "dev",
+    "dependencies": ["manifest:browser_action"],
+    "contexts": ["privileged_extension"]
+  },
   "action": {
     "dependencies": ["manifest:action"],
     "contexts": ["privileged_extension"]
