@@ -7,7 +7,7 @@
     "namespace": "windows",
     "description": "Use the <code>chrome.windows</code> API to interact with browser windows. You can use this API to create, modify, and rearrange windows in the browser.",
     "compiler_options": {
-      "implemented_in": "shell/browser/extensions/api/windows/windows_api.h"
+      "implemented_in": "electron/shell/browser/extensions/api/windows/windows_api.h"
     },
     "types": [
       {
