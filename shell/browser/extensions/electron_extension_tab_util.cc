@@ -21,6 +21,7 @@
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/web_contents_zoom_observer.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
+#include "third_party/blink/public/mojom/favicon/favicon_url.mojom.h"
 
 namespace extensions {
 namespace {
@@ -40,6 +41,7 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
     loading_ = contents->IsLoading();
     muted_ = contents->IsAudioMuted();
     audible_ = contents->IsCurrentlyAudible();
+    favicon_ = last_favicon_ = PickFavicon(contents->GetFaviconURLs());
     zoom_ = electron::WebContentsZoomController::FromWebContents(contents);
     if (zoom_) {
       zoom_level_ = zoom_->GetZoomLevel();
@@ -87,8 +89,16 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
   void TitleWasSet(content::NavigationEntry*) override { Updated(); }
   void DidUpdateAudioMutingState(bool) override { Updated(); }
   void OnAudioStateChanged(bool) override { Updated(); }
+  void DidUpdateFaviconURL(content::RenderFrameHost* frame,
+      const std::vector<blink::mojom::FaviconURLPtr>& candidates) override {
+    if (frame != web_contents()->GetPrimaryMainFrame()) return;
+    favicon_ = PickFavicon(candidates);
+    Updated();
+  }
   void DidFinishNavigation(content::NavigationHandle* navigation) override {
-    if (navigation->IsInPrimaryMainFrame() && navigation->HasCommitted()) Updated();
+    if (!navigation->IsInPrimaryMainFrame() || !navigation->HasCommitted()) return;
+    if (!navigation->IsSameDocument()) favicon_.clear();
+    Updated();
   }
   void Updated() {
     auto* wc = web_contents();
@@ -101,6 +111,8 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
     const bool audible = wc->IsCurrentlyAudible(), pinned = IsElectronBrowserTabPinned(wc);
     base::DictValue changes;
     if (url.spec() != last_url_) changes.Set("url", url.spec());
+    if (favicon_ != last_favicon_) changes.Set("favIconUrl", favicon_);
+    last_favicon_ = favicon_;
     if (!loading && title != last_title_) changes.Set("title", title);
     if (loading != loading_) changes.Set("status", loading ? "loading" : "complete");
     if (pinned != pinned_) changes.Set("pinned", pinned);
@@ -128,7 +140,7 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
           (permissions->HasAPIPermissionForTab(contents->ID(), mojom::APIPermissionID::kTab) &&
            permissions->GetPageAccess(url, contents->ID(), nullptr) == PermissionsData::PageAccess::kAllowed);
       auto change = changes.Clone();
-      if (!privileged) { change.Remove("url"); change.Remove("title"); }
+      if (!privileged) { change.Remove("url"); change.Remove("title"); change.Remove("favIconUrl"); }
       if (change.empty()) continue;
       api::tabs::Tab tab;
       tab.id = contents->ID();
@@ -146,7 +158,8 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
       tab.muted_info = std::move(info);
       if (privileged) {
         tab.url = url.spec();
-        // Do not attribute a previous document\'s title to a new origin while loading.
+        if (!favicon_.empty()) tab.fav_icon_url = favicon_;
+        // Do not attribute a previous document's title to a new origin while loading.
         if (!loading) tab.title = title;
       }
       base::ListValue args;
@@ -161,7 +174,13 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
     SetTabId(frame);
   }
  private:
-  std::string last_url_, last_title_;
+  static std::string PickFavicon(const std::vector<blink::mojom::FaviconURLPtr>& candidates) {
+    for (const auto& icon : candidates)
+      if (icon->icon_type == blink::mojom::FaviconIconType::kFavicon && icon->icon_url.is_valid())
+        return icon->icon_url.spec();
+    return {};
+  }
+  std::string last_url_, last_title_, favicon_, last_favicon_;
   bool loading_ = false, muted_ = false, audible_ = false, pinned_ = false;
   raw_ptr<electron::WebContentsZoomController> zoom_ = nullptr;
   double zoom_level_ = 0;
