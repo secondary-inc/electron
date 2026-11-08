@@ -11,6 +11,7 @@
 #include "base/base64.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_rep.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "base/strings/utf_string_conversions.h"
 #include "shell/common/extensions/api/tabs.h"
