@@ -644,6 +644,10 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
       ElectronBrowserTabWindowId(web_contents_) >= 0 &&
       !IsElectronBrowserTabActive(contents)) {
     contents->Emit("browser-tab-activate");
+    contents = GetElectronTabById(tab_id, browser_context());
+    if (!contents)
+      return RespondNow(Error("The tab closed during activation"));
+    web_contents_ = contents->web_contents();
     if (!IsElectronBrowserTabActive(contents))
       return RespondNow(Error("The browser could not activate this tab"));
   }
