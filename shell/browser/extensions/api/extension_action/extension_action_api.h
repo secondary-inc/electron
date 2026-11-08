@@ -38,7 +38,7 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
   ExtensionActionAPI(const ExtensionActionAPI&) = delete;
   ExtensionActionAPI& operator=(const ExtensionActionAPI&) = delete;
 
-  ~ExtensionActionAPI() override = default;
+  ~ExtensionActionAPI() override;
 
   // Convenience method to get the instance for a profile.
   static ExtensionActionAPI* Get(content::BrowserContext* context);

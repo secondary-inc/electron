@@ -40,6 +40,7 @@ void ExtensionActionAPI::Observer::OnExtensionActionAPIShuttingDown() {}
 //
 
 ExtensionActionAPI::ExtensionActionAPI(content::BrowserContext*) {}
+ExtensionActionAPI::~ExtensionActionAPI() = default;
 
 // static
 BrowserContextKeyedAPIFactory<ExtensionActionAPI>*
