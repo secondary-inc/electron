@@ -682,6 +682,73 @@ base::expected<GURL, std::string> PrepareURLForNavigation(
 
 }  // namespace
 
+ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().size() == 2 && args()[1].is_dict());
+  const auto& properties = args()[1].GetDict();
+  const auto index = properties.FindInt("index");
+  EXTENSION_FUNCTION_VALIDATE(index && *index >= -1);
+  const bool multiple = args()[0].is_list();
+  std::vector<int> ids;
+  if (args()[0].is_int()) ids.push_back(args()[0].GetInt());
+  else {
+    EXTENSION_FUNCTION_VALIDATE(multiple);
+    if (args()[0].GetList().size() > 100)
+      return RespondNow(Error("Move between one and 100 browser tabs"));
+    for (const auto& value : args()[0].GetList()) {
+      EXTENSION_FUNCTION_VALIDATE(value.is_int());
+      if (std::find(ids.begin(), ids.end(), value.GetInt()) != ids.end())
+        return RespondNow(Error("Duplicate browser tab in move"));
+      ids.push_back(value.GetInt());
+    }
+  }
+  if (ids.empty()) return RespondNow(Error("Move between one and 100 browser tabs"));
+  auto* selected = GetActiveElectronTab(browser_context());
+  if (!selected || ElectronBrowserTabWindowId(selected->web_contents()) < 0)
+    return RespondNow(Error("No selected browser tab in this profile"));
+  const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
+  if (const auto* value = properties.Find("windowId")) {
+    EXTENSION_FUNCTION_VALIDATE(value->is_int());
+    if (value->GetInt() != -2 && value->GetInt() != window_id)
+      return RespondNow(Error("Only the selected browser window is supported"));
+  }
+  for (int id : ids) {
+    auto* target = GetElectronTabById(id, browser_context());
+    if (!target || ElectronBrowserTabWindowId(target->web_contents()) != window_id ||
+        !target->owner_window() || target->owner_window()->base_window_id() != window_id)
+      return RespondNow(Error("No such browser tab in the selected profile window"));
+  }
+  if (!selected->Emit("browser-tabs-move", extension()->id(), ids, *index))
+    return RespondNow(Error("The browser refused to move these tabs"));
+  base::ListValue result;
+  for (int id : ids) {
+    auto* target = GetElectronTabById(id, browser_context());
+    if (!target) return RespondNow(Error("The tab closed during move"));
+    auto* wc = target->web_contents();
+    tabs::Tab tab;
+    tab.id = id;
+    tab.window_id = window_id;
+    tab.index = ElectronBrowserTabIndex(wc);
+    tab.active = IsElectronBrowserTabActive(target);
+    tab.selected = tab.active;
+    tab.highlighted = tab.active;
+    tab.pinned = IsElectronBrowserTabPinned(wc);
+    tab.incognito = browser_context()->IsOffTheRecord();
+    tab.group_id = -1;
+    tab.split_view_id = -1;
+    tab.status = wc->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
+    tab.audible = target->IsCurrentlyAudible();
+    tab.muted_info = CreateMutedInfo(wc);
+    if (CanAccessPrivilegedTabFields(extension(), id, wc->GetLastCommittedURL())) {
+      tab.url = wc->GetLastCommittedURL().spec();
+      tab.title = base::UTF16ToUTF8(wc->GetTitle());
+      if (auto icon = ElectronBrowserTabFavicon(wc); !icon.empty()) tab.fav_icon_url = std::move(icon);
+    }
+    result.Append(tab.ToValue());
+  }
+  if (!multiple) return RespondNow(WithArguments(std::move(result[0])));
+  return RespondNow(WithArguments(std::move(result)));
+}
+
 ExtensionFunction::ResponseAction TabsRemoveFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(args().size() == 1);
   std::vector<int> ids;

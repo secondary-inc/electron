@@ -273,6 +273,15 @@
         }
       },
       {
+        "name": "move",
+        "type": "function",
+        "parameters": [
+          {"name":"tabIds","choices":[{"type":"integer","minimum":0},{"type":"array","items":{"type":"integer","minimum":0}}]},
+          {"name":"moveProperties","type":"object","properties":{"windowId":{"type":"integer","minimum":-2,"optional":true},"index":{"type":"integer","minimum":-1}}}
+        ],
+        "returns_async":{"name":"callback","optional":true,"parameters":[{"name":"tabs","choices":[{"$ref":"Tab"},{"type":"array","items":{"$ref":"Tab"}}]}]}
+      },
+      {
         "name": "remove",
         "type": "function",
         "parameters": [{"name":"tabIds","choices":[

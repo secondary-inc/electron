@@ -135,6 +135,12 @@ class TabsUpdateFunction : public ExtensionFunction {
 
   DECLARE_EXTENSION_FUNCTION("tabs.update", TABS_UPDATE)
 };
+class TabsMoveFunction : public ExtensionFunction {
+ private:
+  ~TabsMoveFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.move", TABS_MOVE)
+};
 class TabsRemoveFunction : public ExtensionFunction {
  private:
   ~TabsRemoveFunction() override = default;
