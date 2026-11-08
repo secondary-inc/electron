@@ -9,6 +9,11 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "base/functional/bind.h"
+#include "base/memory/ref_counted.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
+#include "shell/common/gin_converters/callback_converter.h"
 #include "base/no_destructor.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_action_manager.h"
@@ -271,9 +276,42 @@ ExtensionFunction::ResponseAction ActionGetUserSettingsFunction::Run() {
 
 ExtensionFunction::ResponseAction
 ActionOpenPopupFunction::RunExtensionAction() {
-  LOG(INFO) << "chrome.action.openPopup is not supported in Electron";
-
-  return RespondNow(NoArguments());
+  auto* tab = GetActiveElectronTab(browser_context());
+  if (!tab || ElectronBrowserTabWindowId(tab->web_contents()) < 0)
+    return RespondNow(Error("No active managed browser window"));
+  const int window_id = ElectronBrowserTabWindowId(tab->web_contents());
+  if (!args().empty() && args()[0].is_dict()) {
+    const auto* requested = args()[0].GetDict().Find("windowId");
+    if (requested) {
+      EXTENSION_FUNCTION_VALIDATE(requested->is_int());
+      if (requested->GetInt() != -2 && requested->GetInt() != window_id)
+        return RespondNow(Error("No active managed browser window"));
+    }
+  }
+  const int tab_id = tab->ID();
+  if (!action_->GetIsVisibleIgnoringDeclarative(tab_id) ||
+      !action_->HasPopup(tab_id))
+    return RespondNow(Error("No enabled popup for the selected tab"));
+  using Pending = base::RefCountedData<base::OnceCallback<void(bool)>>;
+  auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
+      [](scoped_refptr<ActionOpenPopupFunction> function, bool success) {
+        if (success)
+          function->Respond(NoArguments());
+        else
+          function->Respond(Error("Failed to open popup."));
+      },
+      scoped_refptr<ActionOpenPopupFunction>(this)));
+  auto respond = base::BindRepeating(
+      [](scoped_refptr<Pending> pending, bool success) {
+        if (pending->data)
+          std::move(pending->data).Run(success);
+      }, pending);
+  if (!tab->Emit("browser-extension-popup", extension_id(), respond))
+    respond.Run(false);
+  if (pending->data)
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(respond, false), base::Seconds(15));
+  return did_respond() ? AlreadyResponded() : RespondLater();
 }
 
 }  // namespace extensions
