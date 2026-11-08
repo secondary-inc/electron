@@ -7,12 +7,42 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/browser_context.h"
 #include "base/supports_user_data.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/extension_web_contents_observer.h"
+#include "extensions/common/mojom/frame.mojom.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 
 namespace extensions {
 namespace {
 const char kManagedBrowserContext[] = "iris-managed-browser-context";
 const char kBrowserTabState[] = "iris-browser-tab-state";
+const char kBrowserTabFrames[] = "iris-browser-tab-frames";
+// Installed once when the embedder registers a browser tab. Frame identity must
+// match the ID used by tab-specific extension permissions, not keyboard focus.
+class BrowserTabFrames : public base::SupportsUserData::Data,
+                         public content::WebContentsObserver {
+ public:
+  explicit BrowserTabFrames(content::WebContents* contents)
+      : content::WebContentsObserver(contents) {
+    contents->ForEachRenderFrameHost([this](content::RenderFrameHost* frame) {
+      SetTabId(frame);
+    });
+  }
+  void RenderFrameCreated(content::RenderFrameHost* frame) override {
+    SetTabId(frame);
+  }
+ private:
+  void SetTabId(content::RenderFrameHost* frame) {
+    if (!frame->IsRenderFrameLive()) return;
+    auto* observer = ExtensionWebContentsObserver::GetForWebContents(web_contents());
+    auto* tab = electron::api::WebContents::From(web_contents());
+    if (observer && tab) {
+      if (auto* local = observer->GetLocalFrame(frame))
+        local->SetTabId(tab->ID());
+    }
+  }
+};
 struct BrowserTabState : public base::SupportsUserData::Data {
   bool active = false;
   bool pinned = false;
@@ -26,6 +56,8 @@ BrowserTabState* State(content::WebContents* contents) {
 
 void SetElectronBrowserTabState(content::WebContents* contents, bool active,
                                 int window_id, int index, bool pinned) {
+  if (!contents->GetUserData(kBrowserTabFrames))
+    contents->SetUserData(kBrowserTabFrames, std::make_unique<BrowserTabFrames>(contents));
   auto state = std::make_unique<BrowserTabState>();
   state->active = active;
   state->pinned = pinned;

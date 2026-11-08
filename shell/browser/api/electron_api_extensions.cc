@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "shell/browser/api/electron_api_extensions.h"
+#include "extensions/browser/permissions/active_tab_permission_granter.h"
 
 #include "chrome/browser/browser_process.h"
 #include "extensions/browser/extension_registry.h"
@@ -171,6 +172,29 @@ base::DictValue Extensions::GetActionState(gin_helper::ErrorThrower thrower,
       .Set("badgeTextColor", static_cast<double>(action->GetBadgeTextColor(tab_id)))
       .Set("enabled", action->GetIsVisibleIgnoringDeclarative(tab_id));
 }
+void Extensions::ActivateActionPopup(gin_helper::ErrorThrower thrower,
+                                     const std::string& extension_id, int tab_id) {
+  auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                        ->enabled_extensions().GetByID(extension_id);
+  auto* tab = extensions::GetElectronTabById(tab_id, browser_context());
+  if (!extension || !tab ||
+      extensions::ElectronBrowserTabWindowId(tab->web_contents()) < 0 ||
+      !extensions::IsElectronBrowserTabActive(tab)) {
+    thrower.ThrowError("Enabled extension and selected managed tab required");
+    return;
+  }
+  auto* action = extensions::ExtensionActionManager::Get(browser_context())
+                     ->GetExtensionAction(*extension);
+  if (!action || !action->GetIsVisibleIgnoringDeclarative(tab_id) ||
+      !action->HasPopup(tab_id)) {
+    thrower.ThrowError("Enabled extension popup required");
+    return;
+  }
+  auto* contents = tab->web_contents();
+  extensions::ActiveTabPermissionGranter::CreateForWebContents(contents, tab_id, browser_context());
+  extensions::ActiveTabPermissionGranter::FromWebContents(contents)->GrantIfRequested(extension);
+}
+
 void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
                              const std::string& extension_id, int tab_id) {
   auto* extension = extensions::ExtensionRegistry::Get(browser_context())
@@ -193,6 +217,8 @@ void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
     return;
   }
   auto* contents = tab->web_contents();
+  extensions::ActiveTabPermissionGranter::CreateForWebContents(contents, tab_id, browser_context());
+  extensions::ActiveTabPermissionGranter::FromWebContents(contents)->GrantIfRequested(extension);
   extensions::api::tabs::Tab value;
   value.id = tab_id;
   value.active = true;
@@ -208,7 +234,7 @@ void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
   value.status = contents->IsLoading() ? extensions::api::tabs::TabStatus::kLoading :
                                         extensions::api::tabs::TabStatus::kComplete;
   const auto& url = contents->GetLastCommittedURL();
-  // Dispatch does not grant new host or activeTab permissions.
+  // Only requested temporary permissions were granted by this explicit action.
   if (extension->permissions_data()->HasAPIPermissionForTab(
           tab_id, extensions::mojom::APIPermissionID::kTab) ||
       extension->permissions_data()->HasHostPermission(url)) {
@@ -263,6 +289,7 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("getExtension", &Extensions::GetExtension)
       .SetMethod("getAllExtensions", &Extensions::GetAllExtensions)
       .SetMethod("getActionState", &Extensions::GetActionState)
+      .SetMethod("activateActionPopup", &Extensions::ActivateActionPopup)
       .SetMethod("clickAction", &Extensions::ClickAction);
 }
 

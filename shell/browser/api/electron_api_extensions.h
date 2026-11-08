@@ -48,6 +48,8 @@ class Extensions final : public gin::Wrappable<Extensions>,
   v8::Local<v8::Value> GetAllExtensions(v8::Isolate* isolate);
   base::DictValue GetActionState(gin_helper::ErrorThrower thrower,
                                  const std::string& extension_id, int tab_id);
+  void ActivateActionPopup(gin_helper::ErrorThrower thrower,
+                           const std::string& extension_id, int tab_id);
   void ClickAction(gin_helper::ErrorThrower thrower,
                    const std::string& extension_id, int tab_id);
   void OnExtensionActionUpdated(extensions::ExtensionAction* action,
