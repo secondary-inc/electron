@@ -3981,13 +3981,13 @@ void WebContents::CopyImageAt(int x, int y) {
 }
 
 void WebContents::SetBrowserTabState(gin_helper::ErrorThrower thrower, bool active,
-                                     int window_id, int index, std::optional<bool> pinned) {
+                                     int window_id, int index, std::optional<bool> pinned, std::optional<bool> moved) {
   if (window_id < 1 || index < 0) {
     thrower.ThrowTypeError("Invalid browser tab window or index");
     return;
   }
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
-  extensions::SetElectronBrowserTabState(web_contents(), active, window_id, index, pinned.value_or(false));
+  extensions::SetElectronBrowserTabState(web_contents(), active, window_id, index, pinned.value_or(false), moved.value_or(false));
 #else
   thrower.ThrowError("Extensions are disabled in this runtime");
 #endif

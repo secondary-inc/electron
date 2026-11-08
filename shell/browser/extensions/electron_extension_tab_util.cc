@@ -238,11 +238,13 @@ BrowserTabState* State(content::WebContents* contents) {
 }  // namespace
 
 void SetElectronBrowserTabState(content::WebContents* contents, bool active,
-                                int window_id, int index, bool pinned) {
+                                int window_id, int index, bool pinned, bool moved) {
   if (!contents->GetUserData(kBrowserTabFrames))
     contents->SetUserData(kBrowserTabFrames, std::make_unique<BrowserTabFrames>(contents));
   const auto* previous = State(contents);
   const bool created = !previous;
+  const int from_index = previous ? previous->index : -1;
+  const bool notify_move = moved && previous && previous->window_id == window_id && from_index != index;
   const bool activated = active && (!previous || !previous->active || previous->window_id != window_id);
   auto state = std::make_unique<BrowserTabState>();
   state->active = active;
@@ -253,6 +255,22 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
   contents->GetBrowserContext()->SetUserData(
       kManagedBrowserContext, std::make_unique<BrowserTabState>());
   static_cast<BrowserTabFrames*>(contents->GetUserData(kBrowserTabFrames))->Updated(created);
+  if (notify_move && window_id >= 0) {
+    auto* tab = electron::api::WebContents::From(contents);
+    auto* router = EventRouter::Get(contents->GetBrowserContext());
+    if (tab && router) {
+      base::DictValue info;
+      info.Set("windowId", window_id);
+      info.Set("fromIndex", from_index);
+      info.Set("toIndex", index);
+      base::ListValue args;
+      args.Append(tab->ID());
+      args.Append(std::move(info));
+      router->BroadcastEvent(std::make_unique<Event>(
+          events::TABS_ON_MOVED, "tabs.onMoved", std::move(args),
+          contents->GetBrowserContext()));
+    }
+  }
   if (activated && window_id >= 0) {
     auto* tab = electron::api::WebContents::From(contents);
     auto* router = EventRouter::Get(contents->GetBrowserContext());

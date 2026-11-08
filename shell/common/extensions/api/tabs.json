@@ -786,7 +786,6 @@
       },
       {
         "name": "onMoved",
-        "deprecated": "chrome.tabs.onMoved is not current supported in Electron",
         "type": "function",
         "description": "Fired when a tab is moved within a window. Only one move event is fired, representing the tab the user directly moved. Move events are not fired for the other tabs that must move in response to the manually-moved tab. This event is not fired when a tab is moved between windows; for details, see $(ref:tabs.onDetached).",
         "parameters": [

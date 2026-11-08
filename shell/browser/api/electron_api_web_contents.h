@@ -304,7 +304,7 @@ class WebContents final : public ExclusiveAccessContext,
 
   // Focus.
   void SetBrowserTabState(gin_helper::ErrorThrower thrower, bool active,
-                          int window_id, int index, std::optional<bool> pinned);
+                          int window_id, int index, std::optional<bool> pinned, std::optional<bool> moved);
   void Focus();
   bool IsFocused() const;
 
