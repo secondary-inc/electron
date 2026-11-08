@@ -59,6 +59,7 @@ std::string Validate(base::DictValue& item, const base::DictValue& items, const 
     std::set<std::string> seen{key};
     while (!parent_key.empty()) {
       if (!seen.insert(parent_key).second) return "Menu parent cycle";
+      if (seen.size() > 21) return "Menu nesting exceeds 20 levels";
       const auto* p = items.FindDict(parent_key);
       if (!p || !p->FindString("type") || *p->FindString("type") != "normal")
         return "A normal parent menu item must already exist";
@@ -80,8 +81,19 @@ std::string WorkContextMenuKey(const base::Value& id) {
 }
 base::DictValue ReadWorkContextMenus(content::BrowserContext* context, const std::string& id) {
   const auto* stored = ExtensionPrefs::Get(context)->ReadPrefAsDictionary(id, kMenuPref);
-  if (stored && stored->FindInt("revision") && stored->FindDict("items") && stored->FindDict("items")->size() <= 100)
-    return stored->Clone();
+  if (stored && stored->FindInt("revision") && stored->FindDict("items") && stored->FindDict("items")->size() <= 100) {
+    bool valid = true;
+    const auto& items = *stored->FindDict("items");
+    for (const auto [key, value] : items) {
+      if (!value.is_dict()) { valid = false; break; }
+      auto item = value.GetDict().Clone();
+      const auto* id = item.Find("id");
+      if (!id || WorkContextMenuKey(*id) != key || !Validate(item, items, key).empty()) {
+        valid = false; break;
+      }
+    }
+    if (valid) return stored->Clone();
+  }
   return base::DictValue().Set("revision", 0).Set("items", base::DictValue());
 }
 void WriteWorkContextMenus(content::BrowserContext* context, const std::string& id, base::DictValue state) {
