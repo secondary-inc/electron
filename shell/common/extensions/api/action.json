@@ -95,7 +95,6 @@
       },
       {
         "name": "setIcon",
-        "deprecated": "chrome.action.setIcon is not supported in Electron",
         "type": "function",
         "description": "Sets the icon for the action. The icon can be specified either as the path to an image file or as the pixel data from a canvas element, or as dictionary of either one of those. Either the <b>path</b> or the <b>imageData</b> property must be specified.",
         "parameters": [

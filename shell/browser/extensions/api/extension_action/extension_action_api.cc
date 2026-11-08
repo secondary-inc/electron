@@ -12,6 +12,9 @@
 #include "base/no_destructor.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_action_manager.h"
+#include "extensions/browser/icon_util.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
 #include "extensions/browser/extension_registry.h"
 #include "shell/browser/extensions/electron_extension_tab_util.h"
 #include "shell/browser/api/electron_api_web_contents.h"
@@ -144,8 +147,19 @@ ActionIsEnabledFunction::RunExtensionAction() {
 
 ExtensionFunction::ResponseAction
 ExtensionActionSetIconFunction::RunExtensionAction() {
-  LOG(INFO) << "chrome.action.setIcon is not supported in Electron";
-
+  EXTENSION_FUNCTION_VALIDATE(!args().empty() && args()[0].is_dict());
+  const auto& details = args()[0].GetDict();
+  const auto* images = details.FindDict("imageData");
+  if (!images) {
+    if (details.FindInt("iconIndex")) return RespondNow(NoArguments());
+    return RespondNow(Error("Icon image data is required"));
+  }
+  gfx::ImageSkia icon;
+  if (ParseIconFromCanvasDictionary(*images, &icon) != IconParseResult::kSuccess ||
+      icon.isNull())
+    return RespondNow(Error("Invalid extension action icon"));
+  action_->SetIcon(tab_id_, gfx::Image(icon));
+  NotifyActionChange();
   return RespondNow(NoArguments());
 }
 

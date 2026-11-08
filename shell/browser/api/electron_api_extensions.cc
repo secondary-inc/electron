@@ -8,6 +8,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/icon_util.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "base/strings/utf_string_conversions.h"
 #include "shell/common/extensions/api/tabs.h"
@@ -146,7 +147,11 @@ base::DictValue Extensions::GetActionState(gin_helper::ErrorThrower thrower,
   auto* action = extensions::ExtensionActionManager::Get(browser_context())
                      ->GetExtensionAction(*extension);
   if (!action) return {};
+  auto icon = action->GetExplicitlySetIcon(tab_id);
+  if (icon.IsEmpty()) icon = action->GetDefaultIconImage();
+  const std::string icon_url = icon.IsEmpty() ? "" : extensions::GetIconUrlFromImage(icon).spec();
   return base::DictValue()
+      .Set("icon", icon_url.size() <= 1024 * 1024 ? icon_url : "")
       .Set("title", action->GetTitle(tab_id))
       .Set("popup", action->GetPopupUrl(tab_id).spec())
       .Set("badgeText", action->GetDisplayBadgeText(tab_id))
