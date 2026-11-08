@@ -1000,7 +1000,6 @@
       },
       {
         "name": "onRemoved",
-        "deprecated": "chrome.tabs.onRemoved is not current supported in Electron",
         "type": "function",
         "description": "Fired when a tab is closed.",
         "parameters": [

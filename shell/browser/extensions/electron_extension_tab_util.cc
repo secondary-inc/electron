@@ -20,6 +20,7 @@
 #include "extensions/common/mojom/frame.mojom.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/web_contents_zoom_observer.h"
+#include "shell/browser/native_window.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/mojom/favicon/favicon_url.mojom.h"
 
@@ -84,6 +85,22 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
         events::TABS_ON_ZOOM_CHANGE, "tabs.onZoomChange", std::move(args),
         web_contents()->GetBrowserContext()));
   }
+  void WebContentsDestroyed() override {
+    auto* wc = web_contents();
+    if (!wc || tab_id_ < 0 || window_id_ < 0) return;
+    auto* context = wc->GetBrowserContext();
+    auto* router = EventRouter::Get(context);
+    if (!router) return;
+    base::DictValue info;
+    info.Set("windowId", window_id_);
+    info.Set("isWindowClosing", had_owner_ && (!owner_ || owner_->IsClosed()));
+    base::ListValue args;
+    args.Append(tab_id_);
+    args.Append(std::move(info));
+    tab_id_ = -1;
+    router->BroadcastEvent(std::make_unique<Event>(
+        events::TABS_ON_REMOVED, "tabs.onRemoved", std::move(args), context));
+  }
   const std::string& favicon() const { return favicon_; }
   void DidStartLoading() override { Updated(); }
   void DidStopLoading() override { Updated(); }
@@ -106,6 +123,12 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
     if (!wc || !wc->GetUserData(kBrowserTabState)) return;
     auto* contents = electron::api::WebContents::From(wc);
     if (!contents) return;
+    tab_id_ = contents->ID();
+    window_id_ = ElectronBrowserTabWindowId(wc);
+    if (auto* owner = contents->owner_window()) {
+      owner_ = owner->GetWeakPtr();
+      had_owner_ = true;
+    }
     const auto url = wc->GetLastCommittedURL();
     const std::string title = base::UTF16ToUTF8(wc->GetTitle());
     const bool loading = wc->IsLoading(), muted = wc->IsAudioMuted();
@@ -185,6 +208,9 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
         return icon->icon_url.spec();
     return {};
   }
+  int tab_id_ = -1, window_id_ = -1;
+  bool had_owner_ = false;
+  base::WeakPtr<electron::NativeWindow> owner_;
   std::string last_url_, last_title_, favicon_, last_favicon_;
   bool loading_ = false, muted_ = false, audible_ = false, pinned_ = false;
   raw_ptr<electron::WebContentsZoomController> zoom_ = nullptr;
