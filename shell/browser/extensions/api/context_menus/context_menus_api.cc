@@ -3,6 +3,8 @@
 #include "shell/browser/extensions/api/context_menus/context_menus_api.h"
 #include <set>
 #include "base/strings/string_number_conversions.h"
+#include "base/json/json_writer.h"
+#include "extensions/browser/pref_types.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/url_pattern.h"
@@ -10,6 +12,7 @@
 namespace extensions {
 namespace {
 constexpr char kPref[] = "iris_context_menus";
+constexpr PrefMap kMenuPref{kPref, kDictionary, PrefScope::kExtensionSpecific};
 bool PatternsValid(const base::Value* value) {
   if (!value) return true;
   if (!value->is_list() || value->GetList().size() > 100) return false;
@@ -65,6 +68,8 @@ std::string Validate(base::DictValue& item, const base::DictValue& items, const 
   }
   item.Remove("onclick");
   item.Remove("generatedId");
+  auto serialized = base::WriteJson(item);
+  if (!serialized || serialized->size() > 32768) return "Menu item exceeds 32 KiB";
   return {};
 }
 }
@@ -74,7 +79,7 @@ std::string WorkContextMenuKey(const base::Value& id) {
   return {};
 }
 base::DictValue ReadWorkContextMenus(content::BrowserContext* context, const std::string& id) {
-  const auto* stored = ExtensionPrefs::Get(context)->ReadPrefAsDictionary(id, kPref);
+  const auto* stored = ExtensionPrefs::Get(context)->ReadPrefAsDictionary(id, kMenuPref);
   if (stored && stored->FindInt("revision") && stored->FindDict("items") && stored->FindDict("items")->size() <= 100)
     return stored->Clone();
   return base::DictValue().Set("revision", 0).Set("items", base::DictValue());
