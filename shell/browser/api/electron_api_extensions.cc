@@ -31,6 +31,8 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/api/runtime/runtime_api.h"
+#include "base/version.h"
 #include "base/base64.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
@@ -651,6 +653,23 @@ void Extensions::SetCommandShortcuts(gin_helper::ErrorThrower thrower,
       extension_id, "iris_command_shortcuts", base::Value(std::move(bindings)));
 }
 
+void Extensions::NotifyInstalled(gin_helper::ErrorThrower thrower,
+                                  const std::string& extension_id,
+                                  const std::string& previous_version) {
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  const base::Version previous(previous_version);
+  if (!extension || (!previous_version.empty() &&
+      (!previous.IsValid() || previous.CompareTo(extension->version()) >= 0))) {
+    thrower.ThrowError("Enabled extension and older previous version required");
+    return;
+  }
+  // Only the embedder's committed install/update path calls this. Ordinary
+  // loads, restore, disable/enable and failed-update rollback must not emit it.
+  extensions::RuntimeEventRouter::DispatchOnInstalledEvent(
+      browser_context(), extension_id, previous, false);
+}
+
 void Extensions::RunCommand(gin_helper::ErrorThrower thrower,
                             const std::string& extension_id,
                             const std::string& name, int tab_id) {
@@ -746,6 +765,7 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("setCommandShortcuts", &Extensions::SetCommandShortcuts)
       .SetMethod("getCommands", &Extensions::GetCommands)
       .SetMethod("runCommand", &Extensions::RunCommand)
+      .SetMethod("notifyInstalled", &Extensions::NotifyInstalled)
       .SetMethod("clickAction", &Extensions::ClickAction);
 }
 
