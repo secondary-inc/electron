@@ -5,7 +5,7 @@ import { ipcRendererInternal } from '@electron/internal/renderer/ipc-renderer-in
 const { contextIsolationEnabled } = internalContextBridge;
 
 export const windowSetup = (isWebView: boolean, isHiddenPage: boolean) => {
-  if (!process.sandboxed && !isWebView && process.isMainFrame) {
+  if ((!process.sandboxed || location.protocol === 'chrome-extension:') && !isWebView && process.isMainFrame) {
     // Override default window.close for the top-level document; frames keep
     // Blink's behaviour (a nested browsing context cannot close the window).
     window.close = function () {
