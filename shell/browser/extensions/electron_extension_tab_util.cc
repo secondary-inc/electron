@@ -175,6 +175,7 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
       tab.active = IsElectronBrowserTabActive(contents);
       tab.selected = tab.active; tab.highlighted = tab.active;
       tab.pinned = pinned;
+      if (const int opener = ElectronBrowserTabOpener(wc); opener >= 0) tab.opener_tab_id = opener;
       tab.incognito = context->IsOffTheRecord();
       tab.group_id = -1; tab.split_view_id = -1;
       tab.status = loading ? api::tabs::TabStatus::kLoading : api::tabs::TabStatus::kComplete;
@@ -232,6 +233,7 @@ struct BrowserTabState : public base::SupportsUserData::Data {
   bool pinned = false;
   int window_id = -1;
   int index = -1;
+  int opener_tab_id = -1;
 };
 BrowserTabState* State(content::WebContents* contents) {
   return static_cast<BrowserTabState*>(contents->GetUserData(kBrowserTabState));
@@ -239,7 +241,7 @@ BrowserTabState* State(content::WebContents* contents) {
 }  // namespace
 
 void SetElectronBrowserTabState(content::WebContents* contents, bool active,
-                                int window_id, int index, bool pinned, bool moved) {
+                                int window_id, int index, bool pinned, bool moved, int opener_tab_id) {
   if (!contents->GetUserData(kBrowserTabFrames))
     contents->SetUserData(kBrowserTabFrames, std::make_unique<BrowserTabFrames>(contents));
   const auto* previous = State(contents);
@@ -252,6 +254,7 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
   state->pinned = pinned;
   state->window_id = window_id;
   state->index = index;
+  state->opener_tab_id = opener_tab_id == -2 ? (previous ? previous->opener_tab_id : -1) : opener_tab_id;
   contents->SetUserData(kBrowserTabState, std::move(state));
   contents->GetBrowserContext()->SetUserData(
       kManagedBrowserContext, std::make_unique<BrowserTabState>());
@@ -291,6 +294,14 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
 std::string ElectronBrowserTabFavicon(content::WebContents* contents) {
   const auto* observer = static_cast<BrowserTabFrames*>(contents->GetUserData(kBrowserTabFrames));
   return observer ? observer->favicon() : std::string();
+}
+int ElectronBrowserTabOpener(content::WebContents* contents) {
+  const auto* state = State(contents);
+  if (!state || state->opener_tab_id < 0) return -1;
+  auto* opener = GetElectronTabById(state->opener_tab_id, contents->GetBrowserContext());
+  return opener && opener->web_contents() != contents &&
+      ElectronBrowserTabWindowId(opener->web_contents()) == state->window_id
+      ? state->opener_tab_id : -1;
 }
 bool IsElectronBrowserTabPinned(content::WebContents* contents) {
   auto* state = State(contents);

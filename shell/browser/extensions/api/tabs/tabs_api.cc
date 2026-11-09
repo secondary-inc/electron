@@ -386,6 +386,7 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
     tab.selected = tab.active;
     tab.highlighted = tab.active;
     tab.pinned = IsElectronBrowserTabPinned(wc);
+    if (const int opener = ElectronBrowserTabOpener(wc); opener >= 0) tab.opener_tab_id = opener;
     tab.incognito = wc->GetBrowserContext()->IsOffTheRecord();
     tab.group_id = -1;
     tab.status = wc->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
@@ -429,6 +430,7 @@ ExtensionFunction::ResponseAction TabsGetFunction::Run() {
   tab.selected = tab.active;
   tab.highlighted = tab.active;
   tab.pinned = IsElectronBrowserTabPinned(wc);
+    if (const int opener = ElectronBrowserTabOpener(wc); opener >= 0) tab.opener_tab_id = opener;
   tab.incognito = wc->GetBrowserContext()->IsOffTheRecord();
   tab.group_id = -1;
   tab.status = wc->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
@@ -738,6 +740,7 @@ ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
     tab.selected = tab.active;
     tab.highlighted = tab.active;
     tab.pinned = IsElectronBrowserTabPinned(wc);
+    if (const int opener = ElectronBrowserTabOpener(wc); opener >= 0) tab.opener_tab_id = opener;
     tab.incognito = browser_context()->IsOffTheRecord();
     tab.group_id = -1;
     tab.split_view_id = -1;
@@ -843,8 +846,6 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   auto params = tabs::Create::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
   const auto& properties = params->create_properties;
-  if (properties.opener_tab_id)
-    return RespondNow(Error("Tab opener assignment is not supported"));
   const GURL url(properties.url.value_or("about:blank"));
   if (!url.is_valid() || url.spec().size() > 8192 ||
       (!url.SchemeIsHTTPOrHTTPS() && url.spec() != "about:blank" &&
@@ -858,6 +859,13 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
   if (properties.window_id && *properties.window_id != -2 && *properties.window_id != window_id)
     return RespondNow(Error("Only the selected browser window is supported"));
+  const int opener_id = properties.opener_tab_id.value_or(-1);
+  if (properties.opener_tab_id) {
+    auto* opener = GetElectronTabById(opener_id, browser_context());
+    if (!opener || ElectronBrowserTabWindowId(opener->web_contents()) != window_id ||
+        !opener->owner_window() || opener->owner_window()->base_window_id() != window_id)
+      return RespondNow(Error("No opener tab in the selected browser window"));
+  }
   // Closing an extension popup may require beforeunload. Keep one bounded
   // response alive; only the main-process host can acknowledge a registered tab.
   using Pending = base::RefCountedData<base::OnceCallback<void(int)>>;
@@ -879,7 +887,7 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
     if (pending->data) std::move(pending->data).Run(id);
   }, pending);
   if (!selected->Emit("browser-tab-create", extension()->id(), url.spec(),
-                 properties.active.value_or(properties.selected.value_or(true)), properties.pinned.value_or(false), properties.index.value_or(-1), reply))
+                 properties.active.value_or(properties.selected.value_or(true)), properties.pinned.value_or(false), properties.index.value_or(-1), reply, opener_id))
     reply.Run(-1);
   if (pending->data)
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
@@ -1022,6 +1030,7 @@ ExtensionFunction::ResponseValue TabsUpdateFunction::GetResult() {
   tab.selected = tab.active;
   tab.highlighted = tab.active;
   tab.pinned = IsElectronBrowserTabPinned(web_contents_);
+  if (const int opener = ElectronBrowserTabOpener(web_contents_); opener >= 0) tab.opener_tab_id = opener;
   tab.incognito = web_contents_->GetBrowserContext()->IsOffTheRecord();
   tab.group_id = -1;
   tab.status = web_contents_->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;

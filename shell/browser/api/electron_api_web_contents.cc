@@ -3981,13 +3981,22 @@ void WebContents::CopyImageAt(int x, int y) {
 }
 
 void WebContents::SetBrowserTabState(gin_helper::ErrorThrower thrower, bool active,
-                                     int window_id, int index, std::optional<bool> pinned, std::optional<bool> moved) {
+                                     int window_id, int index, std::optional<bool> pinned, std::optional<bool> moved, std::optional<int> opener_tab_id) {
   if (window_id < 1 || index < 0) {
     thrower.ThrowTypeError("Invalid browser tab window or index");
     return;
   }
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
-  extensions::SetElectronBrowserTabState(web_contents(), active, window_id, index, pinned.value_or(false), moved.value_or(false));
+  if (opener_tab_id && *opener_tab_id != -1) {
+    auto* opener = extensions::GetElectronTabById(*opener_tab_id, web_contents()->GetBrowserContext());
+    if (!opener || opener == this ||
+        extensions::ElectronBrowserTabWindowId(opener->web_contents()) != window_id ||
+        !opener->owner_window() || opener->owner_window()->base_window_id() != window_id) {
+      thrower.ThrowTypeError("Invalid browser tab opener");
+      return;
+    }
+  }
+  extensions::SetElectronBrowserTabState(web_contents(), active, window_id, index, pinned.value_or(false), moved.value_or(false), opener_tab_id.value_or(-2));
 #else
   thrower.ThrowError("Extensions are disabled in this runtime");
 #endif
