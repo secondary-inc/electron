@@ -11,6 +11,11 @@
 // renderer.
 
 {
+  "webNavigation": {
+    "channel": "stable",
+    "dependencies": ["permission:webNavigation"],
+    "contexts": ["privileged_extension"]
+  },
   "windows": {
     "channel": "stable",
     "extension_types": ["extension"],

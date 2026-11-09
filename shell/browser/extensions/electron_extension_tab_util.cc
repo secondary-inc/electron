@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "shell/browser/extensions/electron_extension_tab_util.h"
+#include "shell/browser/extensions/api/web_navigation/web_navigation_api.h"
 
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/browser_context.h"
@@ -255,6 +256,7 @@ void SetElectronBrowserTabState(content::WebContents* contents, bool active,
   contents->GetBrowserContext()->SetUserData(
       kManagedBrowserContext, std::make_unique<BrowserTabState>());
   static_cast<BrowserTabFrames*>(contents->GetUserData(kBrowserTabFrames))->Updated(created);
+  ObserveElectronWebNavigation(contents);
   if (notify_move && window_id >= 0) {
     auto* tab = electron::api::WebContents::From(contents);
     auto* router = EventRouter::Get(contents->GetBrowserContext());

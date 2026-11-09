@@ -14,6 +14,7 @@ function_registration("api_registration") {
     "//electron/shell/common/extensions/api/action.json",
     "//electron/shell/common/extensions/api/browser_action.json",
     "//electron/shell/common/extensions/api/context_menus.json",
+    "//electron/shell/common/extensions/api/web_navigation.json",
     "//electron/shell/common/extensions/api/windows.json",
     "//electron/shell/common/extensions/api/extension.json",
     "//electron/shell/common/extensions/api/font_settings.json",
