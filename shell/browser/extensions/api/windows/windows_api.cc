@@ -126,6 +126,38 @@ ExtensionFunction::ResponseAction WindowsGetFunction::Run() {
   if (found == windows.end() || !MatchType(query)) return RespondNow(Error("No such browser window in this profile"));
   return RespondNow(WithArguments(Describe(id, found->second, query.FindBool("populate").value_or(false), extension())));
 }
+ExtensionFunction::ResponseAction WindowsUpdateFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().size() == 2 && args()[0].is_int() && args()[1].is_dict());
+  const auto& update = args()[1].GetDict();
+  const auto focused = update.FindBool("focused");
+  EXTENSION_FUNCTION_VALIDATE(!update.contains("focused") || focused.has_value());
+  // Reject unsupported updates atomically, including callers bypassing the
+  // renderer's schema validation.
+  for (const auto item : args()[1].GetDict())
+    if (item.first != "focused")
+      return RespondNow(Error("Only browser window focus updates are supported"));
+  const auto windows = ProfileWindows(browser_context());
+  int id = args()[0].GetInt();
+  if (id == -2) id = CurrentWindow(windows, browser_context());
+  const auto found = windows.find(id);
+  if (found == windows.end())
+    return RespondNow(Error("No such browser window in this profile"));
+  auto owner = found->second.native->GetWeakPtr();
+  if (focused) {
+    if (*focused) {
+      if (owner->IsMinimized()) owner->Restore();
+      if (owner && !owner->IsClosed() && !owner->IsVisible()) owner->Show();
+    }
+    if (owner && !owner->IsClosed()) owner->Focus(*focused);
+  }
+  // Native focus listeners may close or reassign the window synchronously.
+  const auto current = ProfileWindows(browser_context());
+  const auto updated = current.find(id);
+  if (!owner || owner->IsClosed() || updated == current.end())
+    return RespondNow(Error("Browser window closed during update"));
+  return RespondNow(WithArguments(
+      Describe(id, updated->second, false, extension())));
+}
 ExtensionFunction::ResponseAction WindowsGetLastFocusedFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(args().empty() || args()[0].is_none() || args()[0].is_dict());
   const auto windows = ProfileWindows(browser_context());

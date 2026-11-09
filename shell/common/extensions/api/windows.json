@@ -1,7 +1,7 @@
 // Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-// Work window queries and profile-scoped focus events. Mutations are not implemented.
+// Work window queries, focus updates and profile-scoped focus events.
 [
   {
     "namespace": "windows",
@@ -256,6 +256,21 @@
               }
             }
           ]
+        }
+      },
+      {
+        "name": "update",
+        "type": "function",
+        "description": "Updates a managed browser window's focused state. Other window mutations are not implemented.",
+        "parameters": [
+          {"name": "windowId", "type": "integer"},
+          {"name": "updateInfo", "type": "object", "properties": {
+            "focused": {"type": "boolean", "optional": true}
+          }}
+        ],
+        "returns_async": {
+          "name": "callback", "optional": true,
+          "parameters": [{"name": "window", "$ref": "Window"}]
         }
       },
       {

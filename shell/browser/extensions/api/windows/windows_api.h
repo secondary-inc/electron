@@ -16,6 +16,12 @@ class WindowsGetFunction : public ExtensionFunction {
   ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("windows.get", WINDOWS_GET)
 };
+class WindowsUpdateFunction : public ExtensionFunction {
+ private:
+  ~WindowsUpdateFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("windows.update", WINDOWS_UPDATE)
+};
 class WindowsGetLastFocusedFunction : public ExtensionFunction {
  private:
   ~WindowsGetLastFocusedFunction() override = default;
