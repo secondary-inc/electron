@@ -63,6 +63,9 @@
     "extension_types": ["extension"],
     "contexts": ["privileged_extension"]
   },
+  "extension.inIncognitoContext": {
+    "contexts": ["privileged_extension", "unprivileged_extension", "content_script"]
+  },
   "extension.getBackgroundPage": {
     "contexts": ["privileged_extension"],
     "disallow_for_service_workers": true

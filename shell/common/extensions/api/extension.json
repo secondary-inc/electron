@@ -10,6 +10,11 @@
       "implemented_in": "electron/shell/browser/extensions/api/extension/extension_api.h"
     },
     "properties": {
+      "inIncognitoContext": {
+        "type": "boolean",
+        "optional": true,
+        "description": "Whether this extension context belongs to an incognito process."
+      }
     },
     "functions": [
       {
