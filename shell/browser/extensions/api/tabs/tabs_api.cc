@@ -802,6 +802,43 @@ ExtensionFunction::ResponseAction TabsRemoveFunction::Run() {
   return did_respond() ? AlreadyResponded() : RespondLater();
 }
 
+ExtensionFunction::ResponseAction TabsDuplicateFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().size() == 1 && args()[0].is_int());
+  const int source_id = args()[0].GetInt();
+  auto* selected = GetActiveElectronTab(browser_context());
+  auto* source = GetElectronTabById(source_id, browser_context());
+  if (!selected || !source || !source->owner_window())
+    return RespondNow(Error("A selected managed tab and a source in this profile are required"));
+  const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
+  if (window_id < 0 || ElectronBrowserTabWindowId(source->web_contents()) != window_id ||
+      source->owner_window()->base_window_id() != window_id)
+    return RespondNow(Error("Only tabs in the selected browser window can be duplicated"));
+  using Pending = base::RefCountedData<base::OnceCallback<void(int)>>;
+  auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
+      [](scoped_refptr<TabsDuplicateFunction> function, int window_id, int id) {
+        auto* context = function->browser_context();
+        auto* created = context ? GetElectronTabById(id, context) : nullptr;
+        if (!context ||
+            ExtensionRegistry::Get(context)->enabled_extensions().GetByID(function->extension_id()) != function->extension() ||
+            !created || ElectronBrowserTabWindowId(created->web_contents()) != window_id ||
+            !created->owner_window() || created->owner_window()->base_window_id() != window_id) {
+          function->Respond(function->Error("The browser refused to duplicate this tab"));
+          return;
+        }
+        function->web_contents_ = created->web_contents();
+        function->Respond(function->GetResult());
+      }, scoped_refptr<TabsDuplicateFunction>(this), window_id));
+  auto reply = base::BindRepeating([](scoped_refptr<Pending> pending, int id) {
+    if (pending->data) std::move(pending->data).Run(id);
+  }, pending);
+  if (!selected->Emit("browser-tab-duplicate", extension()->id(), source_id, reply))
+    reply.Run(-1);
+  if (pending->data)
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(reply, -1), base::Seconds(15));
+  return did_respond() ? AlreadyResponded() : RespondLater();
+}
+
 ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   auto params = tabs::Create::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);

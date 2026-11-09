@@ -167,6 +167,12 @@
     ],
     "functions": [
       {
+        "name": "duplicate",
+        "type": "function",
+        "parameters": [{"name": "tabId", "type": "integer", "minimum": 0}],
+        "returns_async": {"name": "callback", "optional": true, "parameters": [{"name": "tab", "$ref": "Tab", "optional": true}]}
+      },
+      {
         "name": "goBack",
         "type": "function",
         "description": "Goes back to the previous page in a tab.",

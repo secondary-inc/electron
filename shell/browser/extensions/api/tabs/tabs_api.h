@@ -147,6 +147,12 @@ class TabsRemoveFunction : public ExtensionFunction {
   ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("tabs.remove", TABS_REMOVE)
 };
+class TabsDuplicateFunction : public TabsUpdateFunction {
+ private:
+  ~TabsDuplicateFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.duplicate", TABS_DUPLICATE)
+};
 class TabsCreateFunction : public TabsUpdateFunction {
  private:
   ~TabsCreateFunction() override = default;
