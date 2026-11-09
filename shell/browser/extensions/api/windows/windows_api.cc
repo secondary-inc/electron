@@ -14,6 +14,7 @@
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/extensions/electron_extension_tab_util.h"
 #include "shell/browser/native_window.h"
+#include "shell/browser/window_list.h"
 #include "shell/common/extensions/api/tabs.h"
 namespace extensions {
 namespace {
@@ -122,6 +123,25 @@ ExtensionFunction::ResponseAction WindowsGetFunction::Run() {
   const auto found = windows.find(id);
   const auto& query = Query(args(), 1);
   if (found == windows.end() || !MatchType(query)) return RespondNow(Error("No such browser window in this profile"));
+  return RespondNow(WithArguments(Describe(id, found->second, query.FindBool("populate").value_or(false), extension())));
+}
+ExtensionFunction::ResponseAction WindowsGetLastFocusedFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().empty() || args()[0].is_none() || args()[0].is_dict());
+  const auto windows = ProfileWindows(browser_context());
+  const auto& query = Query(args(), 0);
+  int id = -1;
+  uint64_t latest = 0;
+  if (MatchType(query)) {
+    for (const auto& [candidate, window] : windows) {
+      const auto order = electron::WindowList::GetLastFocusOrder(window.native);
+      if (order > latest) { latest = order; id = candidate; }
+    }
+    // A hidden fixture or newly restored shell may never have received OS focus.
+    // Use the unique selected managed window only in that initial state.
+    if (id < 0) id = CurrentWindow(windows, browser_context());
+  }
+  const auto found = windows.find(id);
+  if (found == windows.end()) return RespondNow(Error("No unambiguous last-focused browser window in this profile"));
   return RespondNow(WithArguments(Describe(id, found->second, query.FindBool("populate").value_or(false), extension())));
 }
 ExtensionFunction::ResponseAction WindowsGetCurrentFunction::Run() {

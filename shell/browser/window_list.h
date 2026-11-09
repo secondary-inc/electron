@@ -6,6 +6,7 @@
 #define ELECTRON_SHELL_BROWSER_WINDOW_LIST_H_
 
 #include <vector>
+#include <cstdint>
 
 #include "base/observer_list.h"
 
@@ -24,6 +25,8 @@ class WindowList {
 
   static WindowVector GetWindows();
   static bool IsEmpty();
+  static void WindowFocused(NativeWindow* window);
+  static uint64_t GetLastFocusOrder(NativeWindow* window);
 
   // Adds or removes |window| from the list it is associated with.
   static void AddWindow(NativeWindow* window);

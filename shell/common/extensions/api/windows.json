@@ -257,6 +257,27 @@
             }
           ]
         }
+      },
+      {
+        "name": "getLastFocused",
+        "type": "function",
+        "description": "Gets the most recently focused managed browser window in the calling profile.",
+        "parameters": [
+          {
+            "name": "queryOptions",
+            "$ref": "QueryOptions",
+            "optional": true
+          }
+        ],
+        "returns_async": {
+          "name": "callback",
+          "parameters": [
+            {
+              "name": "window",
+              "$ref": "Window"
+            }
+          ]
+        }
       }
     ]
   }
