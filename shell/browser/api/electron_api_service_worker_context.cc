@@ -126,7 +126,8 @@ void ServiceWorkerContext::OnReportConsoleMessage(
            .Set("level", static_cast<int32_t>(message.message_level))
            .Set("message", message.message)
            .Set("lineNumber", message.line_number)
-           .Set("sourceUrl", message.source_url.spec())
+            .Set("sourceUrl", message.source_url.spec())
+            .Set("scope", scope.spec())
            .Build());
 }
 
