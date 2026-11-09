@@ -2749,7 +2749,10 @@ content::WebContents* WebContents::GetDevToolsWebContents() const {
 
 void WebContents::WebContentsDestroyed() {
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
-  if (extensions::ElectronBrowserTabWindowId(web_contents()) >= 0)
+  // Extension-owned contents can outlive their underlying native document.
+  // Cleanup may call this again after Observe(nullptr).
+  if (web_contents() &&
+      extensions::ElectronBrowserTabWindowId(web_contents()) >= 0)
     extensions::ExtensionActionAPI::Get(web_contents()->GetBrowserContext())
         ->ClearAllValuesForTab(web_contents());
 #endif
