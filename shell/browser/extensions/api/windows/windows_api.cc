@@ -138,7 +138,7 @@ ExtensionFunction::ResponseAction WindowsGetLastFocusedFunction::Run() {
     }
     // A hidden fixture or newly restored shell may never have received OS focus.
     // Use the unique selected managed window only in that initial state.
-    if (id < 0) id = CurrentWindow(windows, browser_context());
+    if (id < 0) id = windows.size() == 1 ? windows.begin()->first : CurrentWindow(windows, browser_context());
   }
   const auto found = windows.find(id);
   if (found == windows.end()) return RespondNow(Error("No unambiguous last-focused browser window in this profile"));
