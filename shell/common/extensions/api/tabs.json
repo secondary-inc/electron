@@ -165,6 +165,9 @@
         "description": "The type of window."
       }
     ],
+    "properties": {
+      "TAB_ID_NONE": {"value": -1, "description": "An ID that represents the absence of a browser tab."}
+    },
     "functions": [
       {
         "name": "duplicate",
