@@ -7,6 +7,7 @@
 
 #include "content/public/browser/web_contents_user_data.h"
 #include "extensions/browser/extension_web_contents_observer.h"
+#include "extensions/browser/api/declarative_net_request/web_contents_helper.h"
 
 namespace extensions {
 
@@ -34,6 +35,9 @@ class ElectronExtensionWebContentsObserver
 
   explicit ElectronExtensionWebContentsObserver(
       content::WebContents* web_contents);
+
+  // Keep frame-scoped allowAllRequests decisions in sync with native lifetime.
+  declarative_net_request::WebContentsHelper declarative_net_request_helper_;
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
