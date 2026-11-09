@@ -35,6 +35,9 @@
 #include "extensions/browser/state_store.h"
 #include "extensions/browser/scripting_utils.h"
 #include "extensions/browser/scripting_constants.h"
+#include "extensions/browser/user_script_manager.h"
+#include "extensions/browser/extension_util.h"
+#include "extensions/common/user_scripts_allowed_state.h"
 #include "base/version.h"
 #include "base/base64.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -444,6 +447,9 @@ void Extensions::ClearPermissionGrants(gin_helper::ErrorThrower thrower,
   prefs->UpdateExtensionPref(extension_id, "iris_context_menus", std::nullopt);
   prefs->UpdateExtensionPref(extension_id, "iris_command_shortcuts", std::nullopt);
   prefs->UpdateExtensionPref(extension_id, "iris_scripts_version", std::nullopt);
+  prefs->SetBooleanPref(extension_id, extensions::UserScriptManager::kUserScriptsAllowedPref, false);
+  extensions::SetCurrentUserScriptAllowedState(
+      extensions::util::GetBrowserContextId(browser_context()), extension_id, false);
   extensions::scripting::ClearPersistentScriptURLPatterns(browser_context(), extension_id);
   extensions::ExtensionSystem::Get(browser_context())->dynamic_user_scripts_store()
       ->RemoveExtensionValue(extension_id, extensions::scripting::kRegisteredScriptsStorageKey);
@@ -660,6 +666,36 @@ void Extensions::SetCommandShortcuts(gin_helper::ErrorThrower thrower,
       extension_id, "iris_command_shortcuts", base::Value(std::move(bindings)));
 }
 
+base::DictValue Extensions::GetUserScriptsState(
+    gin_helper::ErrorThrower thrower, const std::string& extension_id) {
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  if (!extension) {
+    thrower.ThrowError("Enabled extension required");
+    return {};
+  }
+  const bool available = extension->permissions_data()->HasAPIPermission(
+      extensions::mojom::APIPermissionID::kUserScripts);
+  const bool allowed = available &&
+      extensions::ExtensionSystem::Get(browser_context())->user_script_manager()
+          ->AreUserScriptsAllowed(*extension);
+  return base::DictValue().Set("available", available).Set("allowed", allowed);
+}
+
+void Extensions::SetUserScriptsAllowed(gin_helper::ErrorThrower thrower,
+                                       const std::string& extension_id,
+                                       bool allowed) {
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  if (!extension || !extension->permissions_data()->HasAPIPermission(
+                        extensions::mojom::APIPermissionID::kUserScripts)) {
+    thrower.ThrowError("Enabled extension with granted userScripts permission required");
+    return;
+  }
+  extensions::ExtensionSystem::Get(browser_context())->user_script_manager()
+      ->SetUserScriptPrefEnabled(extension_id, allowed);
+}
+
 void Extensions::NotifyInstalled(gin_helper::ErrorThrower thrower,
                                   const std::string& extension_id,
                                   const std::string& previous_version) {
@@ -773,6 +809,8 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("getCommands", &Extensions::GetCommands)
       .SetMethod("runCommand", &Extensions::RunCommand)
       .SetMethod("notifyInstalled", &Extensions::NotifyInstalled)
+      .SetMethod("getUserScriptsState", &Extensions::GetUserScriptsState)
+      .SetMethod("setUserScriptsAllowed", &Extensions::SetUserScriptsAllowed)
       .SetMethod("clickAction", &Extensions::ClickAction);
 }
 

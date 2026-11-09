@@ -15,6 +15,7 @@
 #include "extensions/common/features/simple_feature.h"
 #include "extensions/common/permissions/permission_message_provider.h"
 #include "extensions/common/url_pattern_set.h"
+#include "extensions/common/user_scripts_availability.h"
 #include "shell/common/extensions/electron_extensions_api_provider.h"
 
 using extensions::ExtensionsClient;
@@ -64,6 +65,8 @@ ElectronExtensionsClient::ElectronExtensionsClient()
     : webstore_base_url_(extension_urls::kChromeWebstoreBaseURL),
       new_webstore_base_url_(extension_urls::kNewChromeWebstoreBaseURL),
       webstore_update_url_(extension_urls::kChromeWebstoreUpdateURL) {
+  SetFeatureDelegatedAvailabilityCheckMap(
+      extensions::user_scripts_availability::CreateAvailabilityCheckMap());
   AddAPIProvider(std::make_unique<extensions::CoreExtensionsAPIProvider>());
   AddAPIProvider(std::make_unique<ElectronExtensionsAPIProvider>());
 }
