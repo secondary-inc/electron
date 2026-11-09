@@ -20,6 +20,7 @@
 #include "base/time/time.h"
 #include "content/public/browser/browser_context.h"
 #include "extensions/browser/extension_file_task_runner.h"
+#include "extensions/browser/api/declarative_net_request/install_index_helper.h"
 #include "extensions/browser/extension_pref_names.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
@@ -38,7 +39,7 @@ namespace extensions {
 
 namespace {
 
-std::pair<scoped_refptr<const Extension>, std::string> LoadUnpacked(
+ElectronExtensionLoadResult LoadUnpacked(
     const base::FilePath& extension_dir,
     int load_flags) {
   // app_shell only supports unpacked extensions.
@@ -47,7 +48,7 @@ std::pair<scoped_refptr<const Extension>, std::string> LoadUnpacked(
   if (!base::DirectoryExists(extension_dir)) {
     std::string err = "Extension directory not found: " +
                       base::UTF16ToUTF8(extension_dir.LossyDisplayName());
-    return std::make_pair(nullptr, err);
+    return {nullptr, std::move(err), {}};
   }
 
   // remove _metadata folder. Otherwise, the following warning will be thrown
@@ -67,8 +68,15 @@ std::pair<scoped_refptr<const Extension>, std::string> LoadUnpacked(
     std::string err = "Loading extension at " +
                       base::UTF16ToUTF8(extension_dir.LossyDisplayName()) +
                       " failed with: " + base::UTF16ToUTF8(load_error);
-    return std::make_pair(nullptr, err);
+    return {nullptr, std::move(err), {}};
   }
+
+  // Match Chromium unpacked installation: index before enabling the extension.
+  // This runs on the extension file task runner, never the UI thread.
+  auto indexed = declarative_net_request::InstallIndexHelper::
+      IndexAndPersistRulesOnInstall(*extension);
+  if (!indexed.has_value())
+    return {nullptr, indexed.error(), {}};
 
   std::string warnings;
   // Log warnings.
@@ -95,7 +103,7 @@ std::pair<scoped_refptr<const Extension>, std::string> LoadUnpacked(
     }
   }
 
-  return std::make_pair(extension, warnings);
+  return {extension, std::move(warnings), std::move(indexed).value()};
 }
 
 }  // namespace
@@ -146,8 +154,8 @@ void ElectronExtensionLoader::UnloadExtension(
 
 void ElectronExtensionLoader::FinishExtensionLoad(
     base::OnceCallback<void(const Extension*, const std::string&)> cb,
-    std::pair<scoped_refptr<const Extension>, std::string> result) {
-  scoped_refptr<const Extension> extension = result.first;
+    ElectronExtensionLoadResult result) {
+  scoped_refptr<const Extension> extension = result.extension;
   if (extension) {
     ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(browser_context_);
     // Keep runtime permission checks in sync with the embedder's explicit load
@@ -167,6 +175,9 @@ void ElectronExtensionLoader::FinishExtensionLoad(
           base::Value(false));
     }
 
+    ExtensionPrefs::Get(browser_context_)->UpdateExtensionPref(
+        extension->id(), ExtensionPrefs::kDNRStaticRulesetPref,
+        base::Value(std::move(result.ruleset_install_prefs)));
     extension_registrar_->AddExtension(extension);
 
     // Write extension install time to ExtensionPrefs.
@@ -187,14 +198,17 @@ void ElectronExtensionLoader::FinishExtensionLoad(
     }
   }
 
-  std::move(cb).Run(extension.get(), result.second);
+  std::move(cb).Run(extension.get(), result.message);
 }
 
 void ElectronExtensionLoader::FinishExtensionReload(
     const ExtensionId& old_extension_id,
-    std::pair<scoped_refptr<const Extension>, std::string> result) {
-  scoped_refptr<const Extension> extension = result.first;
+    ElectronExtensionLoadResult result) {
+  scoped_refptr<const Extension> extension = result.extension;
   if (extension) {
+    ExtensionPrefs::Get(browser_context_)->UpdateExtensionPref(
+        extension->id(), ExtensionPrefs::kDNRStaticRulesetPref,
+        base::Value(std::move(result.ruleset_install_prefs)));
     extension_registrar_->AddExtension(extension);
   }
 }
