@@ -28,6 +28,8 @@
 #include "extensions/browser/quota_service.h"
 #include "extensions/browser/service_worker_manager.h"
 #include "extensions/browser/user_script_manager.h"
+#include "extensions/browser/state_store.h"
+#include "extensions/browser/scripting_utils.h"
 #include "extensions/common/constants.h"
 #include "shell/browser/extensions/electron_extension_loader.h"
 
@@ -77,6 +79,9 @@ void ElectronExtensionSystem::InitForRegularProfile(bool extensions_enabled) {
   service_worker_manager_ =
       std::make_unique<ServiceWorkerManager>(browser_context_);
   quota_service_ = std::make_unique<QuotaService>();
+  dynamic_user_scripts_store_ = std::make_unique<StateStore>(
+      browser_context_, store_factory_, StateStore::BackendType::SCRIPTS, false);
+  dynamic_user_scripts_store_->RegisterKey(scripting::kRegisteredScriptsStorageKey);
   user_script_manager_ = std::make_unique<UserScriptManager>(browser_context_);
   app_sorting_ = std::make_unique<NullAppSorting>();
   extension_loader_ =
@@ -151,7 +156,7 @@ StateStore* ElectronExtensionSystem::rules_store() {
 }
 
 StateStore* ElectronExtensionSystem::dynamic_user_scripts_store() {
-  return nullptr;
+  return dynamic_user_scripts_store_.get();
 }
 
 scoped_refptr<value_store::ValueStoreFactory>

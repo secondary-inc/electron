@@ -90,6 +90,7 @@ class ElectronExtensionSystem : public ExtensionSystem {
 
   std::unique_ptr<ServiceWorkerManager> service_worker_manager_;
   std::unique_ptr<QuotaService> quota_service_;
+  std::unique_ptr<StateStore> dynamic_user_scripts_store_;
   std::unique_ptr<UserScriptManager> user_script_manager_;
   std::unique_ptr<AppSorting> app_sorting_;
   std::unique_ptr<ManagementPolicy> management_policy_;

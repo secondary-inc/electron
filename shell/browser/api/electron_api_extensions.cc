@@ -32,6 +32,8 @@
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/api/runtime/runtime_api.h"
+#include "extensions/browser/state_store.h"
+#include "extensions/browser/scripting_utils.h"
 #include "base/version.h"
 #include "base/base64.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -440,6 +442,10 @@ void Extensions::ClearPermissionGrants(gin_helper::ErrorThrower thrower,
   auto* prefs = extensions::ExtensionPrefs::Get(browser_context());
   prefs->UpdateExtensionPref(extension_id, "iris_context_menus", std::nullopt);
   prefs->UpdateExtensionPref(extension_id, "iris_command_shortcuts", std::nullopt);
+  prefs->UpdateExtensionPref(extension_id, "iris_scripts_version", std::nullopt);
+  extensions::scripting::ClearPersistentScriptURLPatterns(browser_context(), extension_id);
+  extensions::ExtensionSystem::Get(browser_context())->dynamic_user_scripts_store()
+      ->RemoveExtensionValue(extension_id, extensions::scripting::kRegisteredScriptsStorageKey);
   prefs->SetDesiredActivePermissions(extension_id, extensions::PermissionSet());
   if (auto granted = prefs->GetGrantedPermissions(extension_id))
     prefs->RemoveGrantedPermissions(extension_id, *granted);

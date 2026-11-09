@@ -23,6 +23,9 @@
 #include "extensions/browser/api/declarative_net_request/install_index_helper.h"
 #include "extensions/browser/extension_pref_names.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/state_store.h"
+#include "extensions/browser/scripting_utils.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/permissions/permissions_updater.h"
@@ -158,6 +161,18 @@ void ElectronExtensionLoader::FinishExtensionLoad(
   scoped_refptr<const Extension> extension = result.extension;
   if (extension) {
     ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(browser_context_);
+    std::string scripts_version;
+    extension_prefs->ReadPrefAsString(extension->id(), "iris_scripts_version",
+                                      &scripts_version);
+    if (scripts_version != extension->version().GetString()) {
+      // Registrations refer to code in a specific reviewed version. Never
+      // revive old script registrations against a replacement package.
+      scripting::ClearPersistentScriptURLPatterns(browser_context_, extension->id());
+      ExtensionSystem::Get(browser_context_)->dynamic_user_scripts_store()
+          ->RemoveExtensionValue(extension->id(), scripting::kRegisteredScriptsStorageKey);
+      extension_prefs->UpdateExtensionPref(extension->id(), "iris_scripts_version",
+                                           base::Value(extension->version().GetString()));
+    }
     // Keep runtime permission checks in sync with the embedder's explicit load
     // option. Every load defaults back to denied unless the caller opts in.
     extension_prefs->SetAllowFileAccess(
