@@ -265,6 +265,14 @@ Returns:
 * `frameProcessId` Integer _Deprecated_
 * `frameRoutingId` Integer _Deprecated_
 
+The Iris fork also supplies native navigation metadata on these navigation events:
+`hasUserGesture`, `isFormSubmission`, and `isPost` are booleans from Chromium's
+NavigationHandle; `navigationType` is its core page-transition string; and
+`referrer` is a Referrer object containing the URL and policy. These fields let
+hosts distinguish user-initiated links from GET/POST forms without observing or
+modifying website JavaScript. A user gesture alone is not proof of a physical
+mouse click and is not an authorization boundary.
+
 Emitted when a user or the page wants to start navigation on the main frame. It can happen when
 the `window.location` object is changed or a user clicks a link in the page.
 

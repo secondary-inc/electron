@@ -2370,6 +2370,12 @@ bool WebContents::EmitNavigationEvent(
   dict.Set("url", url);
   dict.Set("isSameDocument", is_same_document);
   dict.Set("isMainFrame", is_main_frame);
+  dict.Set("hasUserGesture", navigation_handle->HasUserGesture());
+  dict.Set("isFormSubmission", navigation_handle->IsFormSubmission());
+  dict.Set("isPost", navigation_handle->IsPost());
+  dict.Set("navigationType", std::string(ui::PageTransitionGetCoreTransitionString(
+                                 navigation_handle->GetPageTransition())));
+  dict.Set("referrer", navigation_handle->GetReferrer());
   dict.Set("processId", frame_process_id);
   dict.Set("routingId", frame_routing_id);
   dict.SetGetter("frame", frame_host);
