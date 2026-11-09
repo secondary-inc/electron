@@ -13,6 +13,7 @@ function_registration("api_registration") {
   sources = [
     "//electron/shell/common/extensions/api/action.json",
     "//electron/shell/common/extensions/api/browser_action.json",
+    "//electron/shell/common/extensions/api/commands.json",
     "//electron/shell/common/extensions/api/context_menus.json",
     "//electron/shell/common/extensions/api/web_navigation.json",
     "//electron/shell/common/extensions/api/windows.json",

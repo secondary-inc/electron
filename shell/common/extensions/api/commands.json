@@ -1,0 +1,66 @@
+[
+  {
+    "namespace": "commands",
+    "description": "Discover manifest commands. Host keyboard assignment and execution are not implemented; shortcuts are unassigned.",
+    "compiler_options": {
+      "implemented_in": "electron/shell/browser/extensions/api/commands/commands_api.h"
+    },
+    "types": [
+      {
+        "id": "Command",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "optional": true
+          },
+          "description": {
+            "type": "string",
+            "optional": true
+          },
+          "shortcut": {
+            "type": "string",
+            "optional": true
+          }
+        }
+      }
+    ],
+    "events": [
+      {
+        "name": "onCommand",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "command",
+            "type": "string"
+          },
+          {
+            "name": "tab",
+            "$ref": "tabs.Tab",
+            "optional": true
+          }
+        ]
+      }
+    ],
+    "functions": [
+      {
+        "name": "getAll",
+        "type": "function",
+        "parameters": [],
+        "returns_async": {
+          "name": "callback",
+          "optional": true,
+          "parameters": [
+            {
+              "name": "commands",
+              "type": "array",
+              "items": {
+                "$ref": "Command"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

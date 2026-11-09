@@ -11,6 +11,11 @@
 // renderer.
 
 {
+  "commands": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "contexts": ["privileged_extension"]
+  },
   "webNavigation": {
     "channel": "stable",
     "dependencies": ["permission:webNavigation"],

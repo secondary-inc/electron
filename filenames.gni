@@ -787,6 +787,8 @@ filenames = {
   lib_sources_extensions = [
     "shell/browser/api/electron_api_extensions.cc",
     "shell/browser/api/electron_api_extensions.h",
+    "shell/browser/extensions/api/commands/commands_api.cc",
+    "shell/browser/extensions/api/commands/commands_api.h",
     "shell/browser/extensions/api/extension/extension_api.cc",
     "shell/browser/extensions/api/extension/extension_api.h",
     "shell/browser/extensions/api/font_settings/font_settings_api.cc",
