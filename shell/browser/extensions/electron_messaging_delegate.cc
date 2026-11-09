@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "shell/browser/extensions/electron_messaging_delegate.h"
+#include "shell/browser/extensions/electron_native_messaging.h"
 
 #include <memory>
 #include <utility>
@@ -37,7 +38,9 @@ ElectronMessagingDelegate::IsNativeMessagingHostAllowed(
     const std::string& native_host_name) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  return PolicyPermission::DISALLOW;
+  return ElectronNativeHostAllowed(browser_context, native_host_name)
+             ? PolicyPermission::ALLOW_ALL
+             : PolicyPermission::DISALLOW;
 }
 
 std::optional<base::DictValue> ElectronMessagingDelegate::MaybeGetTabInfo(
@@ -95,7 +98,9 @@ ElectronMessagingDelegate::CreateReceiverForNativeApp(
     const std::string& native_app_name,
     bool allow_user_level,
     std::string* error_out) {
-  return nullptr;
+  auto port = CreateElectronNativeMessagePort(browser_context, std::move(channel_delegate), receiver_port_id, extension_id, native_app_name);
+  if (!port && error_out) *error_out = "Native messaging host is not approved for this extension";
+  return port;
 }
 
 void ElectronMessagingDelegate::QueryIncognitoConnectability(
