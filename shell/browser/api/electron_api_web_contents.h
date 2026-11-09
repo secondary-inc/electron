@@ -953,6 +953,7 @@ class WebContents final : public ExclusiveAccessContext,
   // defers guest WebContents deletion to prevent use-after-free when a JS
   // handler calls webContents.destroy() mid-emission.
   bool is_emitting_event_ = false;
+  bool extension_unload_started_ = false;
 
   // Set by DidFinishNavigation when content discards a navigation because
   // its renderer died; consumed by the DidStopLoading that follows, which

@@ -1609,6 +1609,17 @@ void WebContents::SetContentsBounds(content::WebContents* source,
 }
 
 void WebContents::CloseContents(content::WebContents* source) {
+  // Script-closed extension documents must finish unload (including runtime
+  // messages) before their context is destroyed. ClosePage has Chromium's
+  // bounded unload timeout; repeated close requests must not skip its ACK.
+  if (source->GetLastCommittedURL().SchemeIs("chrome-extension") &&
+      source->NeedToFireBeforeUnloadOrUnloadEvents()) {
+    if (!extension_unload_started_) {
+      extension_unload_started_ = true;
+      source->ClosePage();
+    }
+    return;
+  }
   {
     base::AutoReset<bool> resetter(&is_emitting_event_, true);
     Emit("close");
