@@ -1609,6 +1609,7 @@ void WebContents::SetContentsBounds(content::WebContents* source,
 }
 
 void WebContents::CloseContents(content::WebContents* source) {
+  LOG(ERROR) << "IRIS close trace " << source->GetLastCommittedURL() << " need=" << source->NeedToFireBeforeUnloadOrUnloadEvents() << " started=" << extension_unload_started_;
   // Script-closed extension documents must finish unload (including runtime
   // messages) before their context is destroyed. ClosePage has Chromium's
   // bounded unload timeout; repeated close requests must not skip its ACK.
