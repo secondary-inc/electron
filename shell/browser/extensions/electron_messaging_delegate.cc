@@ -42,7 +42,7 @@ ElectronMessagingDelegate::IsNativeMessagingHostAllowed(
 
 std::optional<base::DictValue> ElectronMessagingDelegate::MaybeGetTabInfo(
     content::WebContents* web_contents) {
-  if (web_contents) {
+  if (web_contents && IsElectronBrowserTab(web_contents)) {
     auto* api_contents = electron::api::WebContents::From(web_contents);
     if (api_contents) {
       api::tabs::Tab tab;
@@ -50,6 +50,25 @@ std::optional<base::DictValue> ElectronMessagingDelegate::MaybeGetTabInfo(
       tab.url = api_contents->GetURL().spec();
       tab.title = base::UTF16ToUTF8(api_contents->GetTitle());
       tab.audible = api_contents->IsCurrentlyAudible();
+      tab.split_view_id = -1;
+      tab.group_id = -1;
+      tab.active = IsElectronBrowserTabActive(api_contents);
+      tab.selected = tab.active;
+      tab.highlighted = tab.active;
+      tab.pinned = IsElectronBrowserTabPinned(web_contents);
+      tab.incognito = web_contents->GetBrowserContext()->IsOffTheRecord();
+      tab.last_accessed =
+          web_contents->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
+      tab.status = web_contents->IsLoading() ? api::tabs::TabStatus::kLoading
+                                            : api::tabs::TabStatus::kComplete;
+      if (const int window_id = ElectronBrowserTabWindowId(web_contents);
+          window_id >= 0) {
+        tab.window_id = window_id;
+        tab.index = ElectronBrowserTabIndex(web_contents);
+      }
+      api::tabs::MutedInfo muted;
+      muted.muted = web_contents->IsAudioMuted();
+      tab.muted_info = std::move(muted);
       return tab.ToValue();
     }
   }
