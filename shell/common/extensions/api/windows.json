@@ -1,7 +1,7 @@
 // Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-// Read-only Work window queries. Mutations and window events are not implemented.
+// Work window queries and profile-scoped focus events. Mutations are not implemented.
 [
   {
     "namespace": "windows",
@@ -279,6 +279,16 @@
           ]
         }
       }
-    ]
+    ],
+    "events": [{
+      "name": "onFocusChanged",
+      "type": "function",
+      "description": "Fired when a managed browser window in this profile gains focus, or WINDOW_ID_NONE when it loses focus.",
+      "filters": [{
+        "name": "windowTypes", "type": "array",
+        "items": {"$ref": "WindowType"}
+      }],
+      "parameters": [{"type": "integer", "name": "windowId", "minimum": -1}]
+    }]
   }
 ]

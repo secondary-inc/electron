@@ -22,6 +22,7 @@
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/web_contents_zoom_observer.h"
 #include "shell/browser/native_window.h"
+#include "shell/browser/native_window_observer.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/mojom/favicon/favicon_url.mojom.h"
 
@@ -30,11 +31,45 @@ namespace {
 const char kManagedBrowserContext[] = "iris-managed-browser-context";
 const char kBrowserTabState[] = "iris-browser-tab-state";
 const char kBrowserTabFrames[] = "iris-browser-tab-frames";
+const char kBrowserWindowFocus[] = "iris-browser-window-focus";
+struct BrowserWindowFocus : public base::SupportsUserData::Data {
+  int id = -1;
+};
+void NotifyBrowserWindowFocus(content::BrowserContext* context, int id,
+                              int losing_id = -1) {
+  auto* state = static_cast<BrowserWindowFocus*>(
+      context->GetUserData(kBrowserWindowFocus));
+  if (!state) {
+    context->SetUserData(kBrowserWindowFocus, std::make_unique<BrowserWindowFocus>());
+    state = static_cast<BrowserWindowFocus*>(context->GetUserData(kBrowserWindowFocus));
+  }
+  // A late blur from the old window must not erase a newer focus notification.
+  if (id == state->id || (id == -1 && state->id != losing_id)) return;
+  state->id = id;
+  auto* router = EventRouter::Get(context);
+  if (!router) return;
+  base::ListValue args;
+  args.Append(id);
+  // These filters select disjoint listener sets. Dispatch each once per
+  // renderer context, rather than once per registered windowTypes filter.
+  // Otherwise two distinct filters matching "normal" duplicate delivery.
+  for (bool explicit_filter : {false, true}) {
+    auto event = std::make_unique<Event>(events::WINDOWS_ON_FOCUS_CHANGED,
+        "windows.onFocusChanged", args.Clone(), context);
+    event->filter_info = mojom::EventFilteringInfo::New();
+    if (explicit_filter)
+      event->filter_info->window_type = "normal";
+    else
+      event->filter_info->window_exposed_by_default = true;
+    router->BroadcastEvent(std::move(event));
+  }
+}
 // Installed once when the embedder registers a browser tab. Frame identity must
 // match the ID used by tab-specific extension permissions, not keyboard focus.
 class BrowserTabFrames : public base::SupportsUserData::Data,
                          public content::WebContentsObserver,
-                         public electron::WebContentsZoomObserver {
+                         public electron::WebContentsZoomObserver,
+                         public electron::NativeWindowObserver {
  public:
   explicit BrowserTabFrames(content::WebContents* contents)
       : content::WebContentsObserver(contents) {
@@ -56,6 +91,23 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
   }
   ~BrowserTabFrames() override {
     if (zoom_) zoom_->RemoveObserver(this);
+    if (owner_) owner_->RemoveObserver(this);
+  }
+  void OnWindowFocus() override {
+    auto* wc = web_contents();
+    if (!wc || !owner_ || owner_->IsClosed() ||
+        owner_->base_window_id() != ElectronBrowserTabWindowId(wc)) return;
+    NotifyBrowserWindowFocus(wc->GetBrowserContext(), owner_->base_window_id());
+  }
+  void OnWindowBlur() override {
+    if (web_contents() && owner_)
+      NotifyBrowserWindowFocus(web_contents()->GetBrowserContext(), -1,
+                               owner_->base_window_id());
+  }
+  void OnWindowClosed() override {
+    OnWindowBlur();
+    if (owner_) owner_->RemoveObserver(this);
+    owner_.reset();
   }
   void OnZoomControllerDestroyed(electron::WebContentsZoomController* controller) override {
     controller->RemoveObserver(this);
@@ -90,6 +142,19 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
     auto* wc = web_contents();
     if (!wc || tab_id_ < 0 || window_id_ < 0) return;
     auto* context = wc->GetBrowserContext();
+    bool other_tab = false;
+    for (auto* candidate : electron::api::WebContents::GetWebContentsList()) {
+      auto* other = candidate->web_contents();
+      if (!other || other == wc || other->IsBeingDestroyed() ||
+          other->GetBrowserContext() != context ||
+          !other->GetUserData(kBrowserTabState)) continue;
+      if (candidate->owner_window() == owner_.get() &&
+          ElectronBrowserTabWindowId(other) == window_id_) {
+        other_tab = true;
+        break;
+      }
+    }
+    if (!other_tab) NotifyBrowserWindowFocus(context, -1, window_id_);
     auto* router = EventRouter::Get(context);
     if (!router) return;
     base::DictValue info;
@@ -126,9 +191,17 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
     if (!contents) return;
     tab_id_ = contents->ID();
     window_id_ = ElectronBrowserTabWindowId(wc);
-    if (auto* owner = contents->owner_window()) {
-      owner_ = owner->GetWeakPtr();
-      had_owner_ = true;
+    auto* owner = contents->owner_window();
+    if (owner && (owner->IsClosed() || owner->base_window_id() != window_id_))
+      owner = nullptr;
+    if (owner != owner_.get()) {
+      if (owner_) owner_->RemoveObserver(this);
+      owner_ = owner ? owner->GetWeakPtr() : base::WeakPtr<electron::NativeWindow>();
+      if (owner_) {
+        had_owner_ = true;
+        owner_->AddObserver(this);
+        if (owner_->IsFocused()) OnWindowFocus();
+      }
     }
     const auto url = wc->GetLastCommittedURL();
     const std::string title = base::UTF16ToUTF8(wc->GetTitle());
