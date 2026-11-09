@@ -26,6 +26,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/state_store.h"
 #include "extensions/browser/scripting_utils.h"
+#include "extensions/browser/scripting_constants.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/permissions/permissions_updater.h"

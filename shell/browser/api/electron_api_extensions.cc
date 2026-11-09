@@ -34,6 +34,7 @@
 #include "extensions/browser/api/runtime/runtime_api.h"
 #include "extensions/browser/state_store.h"
 #include "extensions/browser/scripting_utils.h"
+#include "extensions/browser/scripting_constants.h"
 #include "base/version.h"
 #include "base/base64.h"
 #include "ui/gfx/codec/png_codec.h"

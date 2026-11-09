@@ -30,6 +30,7 @@
 #include "extensions/browser/user_script_manager.h"
 #include "extensions/browser/state_store.h"
 #include "extensions/browser/scripting_utils.h"
+#include "extensions/browser/scripting_constants.h"
 #include "extensions/common/constants.h"
 #include "shell/browser/extensions/electron_extension_loader.h"
 
