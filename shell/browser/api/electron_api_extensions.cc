@@ -22,6 +22,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "shell/browser/extensions/api/context_menus/context_menus_api.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
+#include "extensions/common/api/commands/commands_handler.h"
 #include "shell/browser/extensions/api/permissions/permissions_api_helpers.h"
 #include "shell/common/extensions/api/permissions.h"
 
@@ -607,6 +608,69 @@ void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
   event->user_gesture = extensions::EventRouter::UserGestureState::kEnabled;
   extensions::EventRouter::Get(browser_context())->DispatchEventToExtension(extension_id, std::move(event));
 }
+base::ListValue Extensions::GetCommands(gin_helper::ErrorThrower thrower,
+                                         const std::string& extension_id) {
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  if (!extension) {
+    thrower.ThrowError("Enabled extension not found in this profile");
+    return {};
+  }
+  base::ListValue result;
+  if (const auto* commands = extensions::CommandsInfo::GetNamedCommands(extension)) {
+    for (const auto& [name, command] : *commands)
+      result.Append(base::DictValue().Set("name", name)
+          .Set("description", base::UTF16ToUTF8(command.description())));
+  }
+  return result;
+}
+
+void Extensions::RunCommand(gin_helper::ErrorThrower thrower,
+                            const std::string& extension_id,
+                            const std::string& name, int tab_id) {
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  auto* tab = extensions::GetElectronTabById(tab_id, browser_context());
+  if (!extension || !tab ||
+      extensions::ElectronBrowserTabWindowId(tab->web_contents()) < 0 ||
+      !extensions::IsElectronBrowserTabActive(tab)) {
+    thrower.ThrowError("Enabled extension and selected managed tab required");
+    return;
+  }
+  const auto* commands = extensions::CommandsInfo::GetNamedCommands(extension);
+  if (!commands || !commands->contains(name) || name.empty() || name[0] == '_') {
+    thrower.ThrowError("Named extension command not found");
+    return;
+  }
+  auto* contents = tab->web_contents();
+  extensions::ActiveTabPermissionGranter::CreateForWebContents(contents, tab_id, browser_context());
+  extensions::ActiveTabPermissionGranter::FromWebContents(contents)->GrantIfRequested(extension);
+  extensions::api::tabs::Tab value;
+  value.id = tab_id; value.active = true; value.selected = true; value.highlighted = true;
+  value.pinned = extensions::IsElectronBrowserTabPinned(contents);
+  value.window_id = extensions::ElectronBrowserTabWindowId(contents);
+  value.index = extensions::ElectronBrowserTabIndex(contents);
+  value.incognito = browser_context()->IsOffTheRecord();
+  value.group_id = -1; value.split_view_id = -1;
+  value.last_accessed = contents->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
+  value.status = contents->IsLoading() ? extensions::api::tabs::TabStatus::kLoading :
+                                       extensions::api::tabs::TabStatus::kComplete;
+  const auto& url = contents->GetLastCommittedURL();
+  if (extension->permissions_data()->HasAPIPermissionForTab(
+          tab_id, extensions::mojom::APIPermissionID::kTab) ||
+      extension->permissions_data()->HasHostPermission(url)) {
+    value.url = url.spec();
+    value.title = base::UTF16ToUTF8(contents->GetTitle());
+  }
+  base::ListValue args;
+  args.Append(name); args.Append(value.ToValue());
+  auto event = std::make_unique<extensions::Event>(
+      extensions::events::COMMANDS_ON_COMMAND, "commands.onCommand",
+      std::move(args), browser_context());
+  event->user_gesture = extensions::EventRouter::UserGestureState::kEnabled;
+  extensions::EventRouter::Get(browser_context())->DispatchEventToExtension(extension_id, std::move(event));
+}
+
 void Extensions::OnExtensionActionUpdated(extensions::ExtensionAction* action,
                                            content::WebContents* contents,
                                            content::BrowserContext* context) {
@@ -653,6 +717,8 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("getActionState", &Extensions::GetActionState)
       .SetMethod("setActionPinned", &Extensions::SetActionPinned)
       .SetMethod("activateActionPopup", &Extensions::ActivateActionPopup)
+      .SetMethod("getCommands", &Extensions::GetCommands)
+      .SetMethod("runCommand", &Extensions::RunCommand)
       .SetMethod("clickAction", &Extensions::ClickAction);
 }
 
