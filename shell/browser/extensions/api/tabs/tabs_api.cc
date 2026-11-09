@@ -847,9 +847,11 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
     return RespondNow(Error("Tab opener assignment is not supported"));
   const GURL url(properties.url.value_or("about:blank"));
   if (!url.is_valid() || url.spec().size() > 8192 ||
-      (!url.SchemeIsHTTPOrHTTPS() && url.spec() != "about:blank") ||
-      url.has_username() || url.has_password())
-    return RespondNow(Error("Only HTTP, HTTPS and about:blank tabs are supported"));
+      (!url.SchemeIsHTTPOrHTTPS() && url.spec() != "about:blank" &&
+       !(url.SchemeIs(extensions::kExtensionScheme) && url.host() == extension_id())) ||
+      url.has_username() || url.has_password() ||
+      (url.SchemeIs(extensions::kExtensionScheme) && url.has_port()))
+    return RespondNow(Error("Only web, blank and own-extension tabs are supported"));
   auto* selected = GetActiveElectronTab(browser_context());
   if (!selected || ElectronBrowserTabWindowId(selected->web_contents()) < 0)
     return RespondNow(Error("No selected browser tab in this profile"));
@@ -946,6 +948,17 @@ bool TabsUpdateFunction::UpdateURL(const std::string& url_string,
   if (!url.has_value()) {
     *error = std::move(url.error());
     return false;
+  }
+
+  const GURL current = web_contents_->GetLastCommittedURL();
+  if (current.SchemeIs(extensions::kExtensionScheme) ||
+      url->SchemeIs(extensions::kExtensionScheme)) {
+    if (!current.SchemeIs(extensions::kExtensionScheme) ||
+        !url->SchemeIs(extensions::kExtensionScheme) ||
+        current.host() != extension_id() || url->host() != extension_id()) {
+      *error = "Extension page navigation must remain in its owning extension tab.";
+      return false;
+    }
   }
 
   content::NavigationController::LoadURLParams load_params(*url);
