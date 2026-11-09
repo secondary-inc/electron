@@ -5,6 +5,16 @@
 #include "shell/browser/api/electron_api_extensions.h"
 #include <algorithm>
 #include <set>
+#include "base/files/file.h"
+#include "base/files/file_util.h"
+#include "base/files/scoped_temp_dir.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/task/thread_pool.h"
+#include "components/crx_file/crx_verifier.h"
+#include "third_party/zlib/google/zip_reader.h"
 #include "content/public/browser/render_frame_host.h"
 #include "extensions/browser/extension_api_frame_id_map.h"
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
@@ -45,6 +55,96 @@
 
 namespace electron::api {
 namespace {
+// Runs off the UI thread. Nothing is loaded or executed during package review.
+base::DictValue PrepareSignedPackage(const base::FilePath& source,
+                                    const base::FilePath& parent) {
+  auto fail = [](const char* message) {
+    base::DictValue result;
+    result.Set("error", message);
+    return result;
+  };
+  constexpr size_t kMaxBytes = 50 * 1024 * 1024;
+  if (!source.IsAbsolute() || !parent.IsAbsolute() || base::IsLink(source))
+    return fail("Select a regular CRX3 package");
+  std::string bytes;
+  if (!base::ReadFileToStringWithMaxSize(source, &bytes, kMaxBytes))
+    return fail("Cannot read package, or package exceeds 50 MB");
+  base::ScopedTempDir temporary;
+  if (!temporary.CreateUniqueTempDirUnderPath(parent))
+    return fail("Cannot create private package staging directory");
+  const auto snapshot = temporary.GetPath().AppendASCII("package.crx");
+  if (!base::WriteFile(snapshot, bytes))
+    return fail("Cannot snapshot package");
+  std::string public_key, extension_id;
+  if (crx_file::Verify(snapshot, crx_file::VerifierFormat::CRX3, {}, {},
+                       &public_key, &extension_id, nullptr) !=
+      crx_file::VerifierResult::OK_FULL)
+    return fail("Invalid CRX3 signature or unsupported package format");
+  zip::ZipReader reader;
+  if (!reader.OpenFromString(bytes) || reader.num_entries() > 5000)
+    return fail("Invalid package archive or too many entries");
+  const auto directory = temporary.GetPath().AppendASCII("extension");
+  if (!base::CreateDirectory(directory))
+    return fail("Cannot create extension staging directory");
+  size_t total = 0, count = 0;
+  std::set<std::string> names;
+  while (const auto* entry = reader.Next()) {
+    std::string name = entry->path_in_original_encoding;
+    if (entry->is_directory && !name.empty() && name.back() == '/')
+      name.pop_back();
+    if (++count > 5000 || name.empty() || name.size() > 4096 ||
+        name.find('\\') != std::string::npos ||
+        name.find(':') != std::string::npos ||
+        name.find('\0') != std::string::npos ||
+        entry->is_unsafe || entry->is_symbolic_link || entry->is_encrypted ||
+        entry->uses_aes_encryption ||
+        !names.insert(base::ToLowerASCII(name)).second)
+      return fail("Unsafe or duplicate package entry");
+    for (auto part : base::SplitStringPiece(name, "/", base::KEEP_WHITESPACE,
+                                           base::SPLIT_WANT_ALL)) {
+      if (part.empty() || part == "." || part == "..")
+        return fail("Unsafe package path");
+    }
+    auto relative = base::FilePath::FromUTF8Unsafe(name);
+    if (relative.IsAbsolute() || relative.ReferencesParent() ||
+        relative.AsUTF8Unsafe() != name)
+      return fail("Invalid package path encoding");
+    const auto target = directory.Append(relative);
+    if (entry->is_directory) {
+      if (!base::CreateDirectory(target))
+        return fail("Conflicting package directories");
+      continue;
+    }
+    std::string data;
+    if (!reader.ExtractCurrentEntryToString(kMaxBytes - total, &data))
+      return fail("Invalid package entry or extracted package exceeds 50 MB");
+    total += data.size();
+    if (!base::CreateDirectory(target.DirName()))
+      return fail("Conflicting package path");
+    base::File file(target, base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+    if (!file.IsValid() || !file.WriteAtCurrentPosAndCheck(base::as_byte_span(data)))
+      return fail("Conflicting or unwritable package file");
+  }
+  if (!reader.ok())
+    return fail("Corrupt package archive");
+  const auto manifest_path = directory.AppendASCII("manifest.json");
+  std::string manifest_json;
+  if (!base::ReadFileToStringWithMaxSize(manifest_path, &manifest_json, 256 * 1024))
+    return fail("Missing or oversized manifest");
+  auto manifest = base::JSONReader::ReadDict(manifest_json, base::JSON_PARSE_RFC);
+  if (!manifest)
+    return fail("Invalid extension manifest");
+  // The verified signing key, never an untrusted manifest key, determines ID.
+  manifest->Set("key", public_key);
+  auto encoded = base::WriteJson(*manifest);
+  if (!encoded || !base::WriteFile(manifest_path, *encoded))
+    return fail("Cannot preserve signed extension identity");
+  base::DictValue result;
+  result.Set("path", directory.AsUTF8Unsafe());
+  result.Set("extensionId", extension_id);
+  result.Set("temporaryDirectory", temporary.Take().AsUTF8Unsafe());
+  return result;
+}
 content::RenderFrameHost* ContextMenuFrame(content::WebContents* contents, const base::DictValue& details) {
   auto* frame = contents->GetPrimaryMainFrame();
   if (details.contains("frameProcessId") || details.contains("frameRoutingId")) {
@@ -80,6 +180,24 @@ Extensions* Extensions::Create(v8::Isolate* isolate,
                                ElectronBrowserContext* browser_context) {
   return cppgc::MakeGarbageCollected<Extensions>(
       isolate->GetCppHeap()->GetAllocationHandle(), browser_context);
+}
+
+v8::Local<v8::Promise> Extensions::PrepareCrx(
+    v8::Isolate* isolate, const base::FilePath& source,
+    const base::FilePath& parent) {
+  gin_helper::Promise<base::DictValue> promise(isolate);
+  auto handle = promise.GetHandle();
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&PrepareSignedPackage, source, parent),
+      base::BindOnce([](gin_helper::Promise<base::DictValue> promise,
+                        base::DictValue result) {
+        if (const auto* error = result.FindString("error"))
+          promise.RejectWithErrorMessage(*error);
+        else
+          promise.Resolve(std::move(result));
+      }, std::move(promise)));
+  return handle;
 }
 
 v8::Local<v8::Promise> Extensions::LoadExtension(
@@ -522,6 +640,7 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
     v8::Isolate* isolate) {
   return gin_helper::EventEmitterMixin<Extensions>::GetObjectTemplateBuilder(
              isolate)
+      .SetMethod("prepareCrx", &Extensions::PrepareCrx)
       .SetMethod("loadExtension", &Extensions::LoadExtension)
       .SetMethod("removeExtension", &Extensions::RemoveExtension)
       .SetMethod("clearPermissionGrants", &Extensions::ClearPermissionGrants)

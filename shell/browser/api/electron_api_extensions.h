@@ -42,6 +42,9 @@ class Extensions final : public gin::Wrappable<Extensions>,
   v8::Local<v8::Promise> LoadExtension(v8::Isolate* isolate,
                                        const base::FilePath& extension_path,
                                        gin::Arguments* args);
+  v8::Local<v8::Promise> PrepareCrx(v8::Isolate* isolate,
+                                    const base::FilePath& source,
+                                    const base::FilePath& parent);
   void RemoveExtension(const std::string& extension_id);
   v8::Local<v8::Promise> RevokeOptionalPermissions(v8::Isolate* isolate,
                                                  const std::string& extension_id);
