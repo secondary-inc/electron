@@ -30,6 +30,9 @@
 #include "base/task/current_thread.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/timer/elapsed_timer.h"
+#include "base/timer/timer.h"
+#include "content/public/browser/weak_document_ptr.h"
+#include "third_party/blink/public/mojom/link_to_text/link_to_text.mojom.h"
 #include "base/unguessable_token.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -4051,6 +4054,83 @@ void WebContents::SetBrowserLinkPreviewOrigin(
 #endif
 }
 
+v8::Local<v8::Promise> WebContents::GetBrowserTextFragment(v8::Isolate* isolate) {
+  struct Request {
+    explicit Request(v8::Isolate* isolate) : promise(isolate) {}
+    gin_helper::Promise<std::string> promise;
+    mojo::Remote<blink::mojom::TextFragmentReceiver> remote;
+    base::OneShotTimer timer;
+    base::WeakPtr<WebContents> owner;
+    content::WeakDocumentPtr document;
+    GURL url;
+    int window_id = -1;
+    bool done = false;
+    void Finish(const std::string& selector, shared_highlighting::LinkGenerationError error) {
+      if (done) return;
+      done = true;
+      timer.Stop();
+      remote.reset();
+      auto* contents = owner ? owner->web_contents() : nullptr;
+      auto* frame = document.AsRenderFrameHostIfValid();
+      bool valid = contents && frame &&
+          contents->GetPrimaryMainFrame() == frame &&
+          contents->GetLastCommittedURL() == url &&
+          contents->GetVisibility() == content::Visibility::VISIBLE;
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+      valid = valid && owner->owner_window() &&
+          owner->owner_window()->base_window_id() == window_id &&
+          extensions::ElectronBrowserTabWindowId(contents) == window_id;
+#else
+      valid = false;
+#endif
+      if (!valid || error != shared_highlighting::LinkGenerationError::kNone ||
+          selector.empty() || selector.size() > 8192) {
+        promise.RejectWithErrorMessage("Text selection changed or no unique selector is available");
+      } else {
+        promise.Resolve(selector);
+      }
+    }
+  };
+  auto request = std::make_shared<Request>(isolate);
+  auto handle = request->promise.GetHandle();
+  auto* contents = web_contents();
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  const int window_id = contents ? extensions::ElectronBrowserTabWindowId(contents) : -1;
+  if (!contents || window_id < 1 || !owner_window() ||
+      owner_window()->base_window_id() != window_id ||
+      contents->GetVisibility() != content::Visibility::VISIBLE ||
+      !contents->GetLastCommittedURL().SchemeIsHTTPOrHTTPS() ||
+      !contents->GetPrimaryMainFrame()->IsRenderFrameLive()) {
+    request->promise.RejectWithErrorMessage("Text fragments require a visible managed HTTP browser tab");
+    return handle;
+  }
+  request->window_id = window_id;
+#else
+  request->promise.RejectWithErrorMessage("Managed browser tabs are unavailable");
+  return handle;
+#endif
+  request->owner = GetWeakPtr();
+  request->document = contents->GetPrimaryMainFrame()->GetWeakDocumentPtr();
+  request->url = contents->GetLastCommittedURL();
+  contents->GetPrimaryMainFrame()->GetRemoteInterfaces()->GetInterface(
+      request->remote.BindNewPipeAndPassReceiver());
+  request->remote.set_disconnect_handler(base::BindOnce(
+      [](std::shared_ptr<Request> request) {
+        request->Finish("", shared_highlighting::LinkGenerationError::kNoRemoteConnection);
+      }, request));
+  request->timer.Start(FROM_HERE, base::Seconds(5), base::BindOnce(
+      [](std::shared_ptr<Request> request) {
+        request->Finish("", shared_highlighting::LinkGenerationError::kTimeout);
+      }, request));
+  request->remote->RequestSelectorForSelection(base::BindOnce(
+      [](std::shared_ptr<Request> request, const std::string& selector,
+         shared_highlighting::LinkGenerationError error,
+         shared_highlighting::LinkGenerationReadyStatus) {
+        request->Finish(selector, error);
+      }, request));
+  return handle;
+}
+
 void WebContents::Focus() {
   // Focusing on WebContents does not automatically focus the window on macOS
   // and Linux, do it manually to match the behavior on Windows.
@@ -5219,6 +5299,7 @@ void WebContents::FillObjectTemplate(v8::Isolate* isolate,
       .SetMethod("stopFindInPage", &WebContents::StopFindInPage)
       .SetMethod("setBrowserTabState", &WebContents::SetBrowserTabState)
       .SetMethod("setBrowserLinkPreviewOrigin", &WebContents::SetBrowserLinkPreviewOrigin)
+      .SetMethod("getBrowserTextFragment", &WebContents::GetBrowserTextFragment)
       .SetMethod("focus", &WebContents::Focus)
       .SetMethod("isFocused", &WebContents::IsFocused)
       .SetMethod("sendInputEvent", &WebContents::SendInputEvent)
