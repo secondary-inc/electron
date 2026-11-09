@@ -13,6 +13,8 @@
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/permissions/permissions_updater.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/user_script_manager.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/extensions/electron_extension_tab_util.h"
 #include "shell/common/gin_converters/callback_converter.h"
@@ -150,6 +152,10 @@ ExtensionFunction::ResponseAction PermissionsRemoveFunction::Run() {
   auto changed = PermissionSet::CreateIntersection(
       requested, extension()->permissions_data()->active_permissions());
   auto notify = changed->Clone();
+  if (requested.HasAPIPermission(mojom::APIPermissionID::kUserScripts)) {
+    ExtensionSystem::Get(browser_context())->user_script_manager()
+        ->SetUserScriptPrefEnabled(extension_id(), false);
+  }
   PermissionsUpdater(browser_context()).RevokeOptionalPermissions(
       *extension(), *changed, PermissionsUpdater::RemoveType::kSoft,
       base::BindOnce([](scoped_refptr<PermissionsRemoveFunction> function,

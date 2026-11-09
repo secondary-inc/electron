@@ -288,6 +288,10 @@ v8::Local<v8::Promise> Extensions::RevokeOptionalPermissions(
   base::ListValue args;
   args.Append(extensions::permissions_api_helpers::PackPermissionSet(*changed)->ToValue());
   const bool notify = !changed->IsEmpty();
+  if (optional->HasAPIPermission(extensions::mojom::APIPermissionID::kUserScripts)) {
+    extensions::ExtensionSystem::Get(browser_context())->user_script_manager()
+        ->SetUserScriptPrefEnabled(extension_id, false);
+  }
   // Hard removal also forgets inactive optional grants remembered by soft removal.
   extensions::PermissionsUpdater(browser_context()).RevokeOptionalPermissions(
       *extension, *optional, extensions::PermissionsUpdater::RemoveType::kHard,
