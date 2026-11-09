@@ -842,6 +842,20 @@ ExtensionFunction::ResponseAction TabsDuplicateFunction::Run() {
   return did_respond() ? AlreadyResponded() : RespondLater();
 }
 
+ExtensionFunction::ResponseAction TabsGetCurrentFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().empty());
+  auto* sender = GetSenderWebContents();
+  if (!sender || sender->GetBrowserContext() != browser_context() ||
+      !IsElectronBrowserTab(sender) || ElectronBrowserTabWindowId(sender) < 0)
+    return RespondNow(NoArguments());
+  auto* contents = electron::api::WebContents::From(sender);
+  if (!contents || !contents->owner_window() ||
+      contents->owner_window()->base_window_id() != ElectronBrowserTabWindowId(sender))
+    return RespondNow(NoArguments());
+  web_contents_ = sender;
+  return RespondNow(GetResult());
+}
+
 ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   auto params = tabs::Create::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);

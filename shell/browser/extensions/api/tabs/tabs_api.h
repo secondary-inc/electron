@@ -153,6 +153,12 @@ class TabsDuplicateFunction : public TabsUpdateFunction {
   ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("tabs.duplicate", TABS_DUPLICATE)
 };
+class TabsGetCurrentFunction : public TabsUpdateFunction {
+ private:
+  ~TabsGetCurrentFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.getCurrent", TABS_GETCURRENT)
+};
 class TabsCreateFunction : public TabsUpdateFunction {
  private:
   ~TabsCreateFunction() override = default;

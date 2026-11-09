@@ -173,6 +173,13 @@
         "returns_async": {"name": "callback", "optional": true, "parameters": [{"name": "tab", "$ref": "Tab", "optional": true}]}
       },
       {
+        "name": "getCurrent",
+        "type": "function",
+        "description": "Gets the calling managed tab, or undefined for a non-tab extension context.",
+        "parameters": [],
+        "returns_async": {"name": "callback", "parameters": [{"name": "tab", "$ref": "Tab", "optional": true}]}
+      },
+      {
         "name": "goBack",
         "type": "function",
         "description": "Goes back to the previous page in a tab.",
