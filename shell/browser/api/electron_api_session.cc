@@ -81,7 +81,9 @@
 #include "shell/browser/net/resolve_host_function.h"
 #include "shell/browser/net/resolve_proxy_helper.h"
 #include "shell/browser/session_preferences.h"
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
 #include "shell/browser/extensions/electron_native_messaging.h"
+#endif
 #include "shell/common/gin_converters/callback_converter.h"
 #include "shell/common/gin_converters/content_converter.h"
 #include "shell/common/gin_converters/file_path_converter.h"
@@ -870,6 +872,7 @@ void Session::SetCertVerifyProc(v8::Local<v8::Value> val,
       ->SetCertVerifierClient(std::move(cert_verifier_client_remote));
 }
 
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
 void Session::SetNativeMessagingHosts(const base::ListValue& entries, gin::Arguments* args) {
   if (!extensions::ConfigureElectronNativeMessaging(browser_context(), entries))
     args->ThrowTypeError("Invalid native messaging host approval");
@@ -883,6 +886,8 @@ bool Session::NativeMessageReply(const std::string& id, const std::string& messa
 bool Session::NativeMessageClose(const std::string& id, const std::string& error) {
   return extensions::ElectronNativeMessageClose(browser_context(), id, error);
 }
+
+#endif
 
 void Session::SetPermissionRequestHandler(v8::Local<v8::Value> val,
                                           gin::Arguments* args) {
@@ -1812,10 +1817,12 @@ void Session::FillObjectTemplate(v8::Isolate* isolate,
       .SetMethod("enableNetworkEmulation", &Session::EnableNetworkEmulation)
       .SetMethod("disableNetworkEmulation", &Session::DisableNetworkEmulation)
       .SetMethod("setCertificateVerifyProc", &Session::SetCertVerifyProc)
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
       .SetMethod("setNativeMessagingHosts", &Session::SetNativeMessagingHosts)
       .SetMethod("nativeMessageReady", &Session::NativeMessageReady)
       .SetMethod("nativeMessageReply", &Session::NativeMessageReply)
       .SetMethod("nativeMessageClose", &Session::NativeMessageClose)
+#endif
       .SetMethod("setPermissionRequestHandler",
                  &Session::SetPermissionRequestHandler)
       .SetMethod("setPermissionCheckHandler",
