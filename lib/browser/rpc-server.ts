@@ -15,12 +15,12 @@ ipcMainInternal.on(IPC_MESSAGES.BROWSER_WINDOW_CLOSE, function (event) {
 
   // Managed extension documents are views, not the enclosing Iris window.
   // Use the browser-initiated close path so unload messages reach the worker.
-  if (event.sender.getType() === 'browserView' &&
+  const window = event.sender.getOwnerBrowserWindow();
+  if ((!window || window.webContents !== event.sender) &&
       event.senderFrame.url.startsWith('chrome-extension://')) {
     event.sender.close({ waitForBeforeUnload: true });
     return;
   }
-  const window = event.sender.getOwnerBrowserWindow();
   if (window) {
     window.close();
   }

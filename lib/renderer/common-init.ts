@@ -17,6 +17,9 @@ switch (window.location.protocol) {
     break;
   }
   case 'chrome-extension:': {
+    // Extension views must dispatch unload before their renderer is destroyed.
+    const { setupWindowClose } = require('@electron/internal/renderer/window-setup') as typeof windowSetupModule;
+    setupWindowClose(isWebView);
     break;
   }
   case 'chrome:': {

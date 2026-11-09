@@ -4,8 +4,8 @@ import { ipcRendererInternal } from '@electron/internal/renderer/ipc-renderer-in
 
 const { contextIsolationEnabled } = internalContextBridge;
 
-export const windowSetup = (isWebView: boolean, isHiddenPage: boolean) => {
-  if ((!process.sandboxed || location.protocol === 'chrome-extension:') && !isWebView && process.isMainFrame) {
+export const setupWindowClose = (isWebView: boolean) => {
+  if (!isWebView && process.isMainFrame) {
     // Override default window.close for the top-level document; frames keep
     // Blink's behaviour (a nested browsing context cannot close the window).
     window.close = function () {
@@ -13,6 +13,11 @@ export const windowSetup = (isWebView: boolean, isHiddenPage: boolean) => {
     };
     if (contextIsolationEnabled) internalContextBridge.overrideGlobalValueFromIsolatedWorld(['close'], window.close);
   }
+
+};
+
+export const windowSetup = (isWebView: boolean, isHiddenPage: boolean) => {
+  if (!process.sandboxed) setupWindowClose(isWebView);
 
   // But we do not support prompt().
   window.prompt = function () {
