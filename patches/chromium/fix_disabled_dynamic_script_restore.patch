@@ -1,0 +1,23 @@
+From: Iris <dev@iris.local>
+Subject: Retain disabled dynamic script metadata across restart
+
+An entirely disabled initial set is intentionally not injected. Avoid treating
+the base loader's no-op error as a failure to restore saved registrations.
+
+diff --git a/extensions/browser/extension_user_script_loader.cc b/extensions/browser/extension_user_script_loader.cc
+--- a/extensions/browser/extension_user_script_loader.cc
++++ b/extensions/browser/extension_user_script_loader.cc
+@@ -919,6 +919,13 @@ void ExtensionUserScriptLoader::OnInitialDynamicScriptsReadFromStateStore(
+     }
+   }
+ 
++  if (scripts_to_add.empty()) {
++    // Disabled sources still retain their registrations for a later opt-in.
++    // AddScripts reports an error for a no-op and would discard this metadata.
++    OnInitialExtensionScriptsLoaded(std::move(initial_dynamic_scripts),
++                                    std::move(callback), this, std::nullopt);
++    return;
++  }
+   AddScripts(std::move(scripts_to_add),
+              base::BindOnce(
+                  &ExtensionUserScriptLoader::OnInitialExtensionScriptsLoaded,

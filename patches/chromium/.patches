@@ -1,6 +1,7 @@
 build_gn.patch
 fix_zip_embedded_nul_names.patch
 fix_scripting_update_persistence.patch
+fix_disabled_dynamic_script_restore.patch
 fix_extension_subframe_embedder_tab_identity.patch
 fix_apple_install_name_linkedit_alignment.patch
 build_resolve_pgo_profiles_from_electron_state_files.patch
