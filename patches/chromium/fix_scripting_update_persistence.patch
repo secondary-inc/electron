@@ -1,0 +1,20 @@
+From: Iris <dev@iris.local>
+Subject: Preserve registered content-script persistence on partial updates
+
+The update output set starts empty. Consult the existing native loader's
+persistent IDs when persistAcrossSessions is omitted, not the output set.
+
+diff --git a/extensions/browser/api/scripting/scripting_api.cc b/extensions/browser/api/scripting/scripting_api.cc
+--- a/extensions/browser/api/scripting/scripting_api.cc
++++ b/extensions/browser/api/scripting/scripting_api.cc
+@@ -969,7 +969,9 @@ std::unique_ptr<UserScript> ScriptingUpdateContentScriptsFunction::ApplyUpdate(
+   // original script is persisted and the flag is not specified.
+   if (new_script.persist_across_sessions.value_or(false) ||
+       (!new_script.persist_across_sessions &&
+-       script_ids_to_persist->contains(new_script.id))) {
++       ExtensionSystem::Get(browser_context())->user_script_manager()
++           ->GetUserScriptLoaderForExtension(extension()->id())
++           ->GetPersistentDynamicScriptIDs().contains(new_script.id))) {
+     script_ids_to_persist->insert(new_script.id);
+   }
+ 
