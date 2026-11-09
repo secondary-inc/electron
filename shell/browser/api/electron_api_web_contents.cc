@@ -1515,6 +1515,18 @@ content::WebContents* WebContents::OpenURLFromTab(
   if (!weak_this || !web_contents())
     return nullptr;
 
+  auto* initiator = content::RenderFrameHost::FromID(
+      params.source_render_process_id, params.source_render_frame_id);
+  if (!source->GetMutableRendererPrefs()->browser_link_preview_origin.empty() &&
+      initiator == source->GetPrimaryMainFrame() && params.user_gesture &&
+      !params.post_data && params.url.SchemeIsHTTPOrHTTPS() &&
+      ui::PageTransitionCoreTypeIs(params.transition, ui::PAGE_TRANSITION_LINK) &&
+      Emit("will-navigate-link", params.url, params.referrer)) {
+    return nullptr;
+  }
+  if (!weak_this || !web_contents())
+    return nullptr;
+
   content::NavigationController::LoadURLParams load_url_params(params.url);
   load_url_params.referrer = params.referrer;
   load_url_params.transition_type = params.transition;
@@ -2371,6 +2383,7 @@ bool WebContents::EmitNavigationEvent(
   dict.Set("isSameDocument", is_same_document);
   dict.Set("isMainFrame", is_main_frame);
   dict.Set("hasUserGesture", navigation_handle->HasUserGesture());
+  dict.Set("initiatedByLinkClick", navigation_handle->WasInitiatedByLinkClick());
   dict.Set("isFormSubmission", navigation_handle->IsFormSubmission());
   dict.Set("isPost", navigation_handle->IsPost());
   dict.Set("navigationType", std::string(ui::PageTransitionGetCoreTransitionString(
@@ -4011,6 +4024,33 @@ void WebContents::SetBrowserTabState(gin_helper::ErrorThrower thrower, bool acti
 #endif
 }
 
+void WebContents::SetBrowserLinkPreviewOrigin(
+    gin_helper::ErrorThrower thrower, const std::string& origin) {
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  if (!web_contents() ||
+      extensions::ElectronBrowserTabWindowId(web_contents()) < 1 ||
+      (!origin.empty() && (!owner_window() ||
+       extensions::ElectronBrowserTabWindowId(web_contents()) !=
+           owner_window()->base_window_id()))) {
+    thrower.ThrowTypeError("Link preview routing requires a managed browser tab");
+    return;
+  }
+  if (!origin.empty() &&
+      (!GURL(origin).SchemeIsHTTPOrHTTPS() ||
+       url::Origin::Create(GURL(origin)).Serialize() != origin)) {
+    thrower.ThrowTypeError("Link preview requires a canonical HTTP origin");
+    return;
+  }
+  auto* prefs = web_contents()->GetMutableRendererPrefs();
+  if (prefs->browser_link_preview_origin == origin)
+    return;
+  prefs->browser_link_preview_origin = origin;
+  web_contents()->SyncRendererPrefs();
+#else
+  thrower.ThrowError("Managed browser tabs are unavailable");
+#endif
+}
+
 void WebContents::Focus() {
   // Focusing on WebContents does not automatically focus the window on macOS
   // and Linux, do it manually to match the behavior on Windows.
@@ -5178,6 +5218,7 @@ void WebContents::FillObjectTemplate(v8::Isolate* isolate,
       .SetMethod("findInPage", &WebContents::FindInPage)
       .SetMethod("stopFindInPage", &WebContents::StopFindInPage)
       .SetMethod("setBrowserTabState", &WebContents::SetBrowserTabState)
+      .SetMethod("setBrowserLinkPreviewOrigin", &WebContents::SetBrowserLinkPreviewOrigin)
       .SetMethod("focus", &WebContents::Focus)
       .SetMethod("isFocused", &WebContents::IsFocused)
       .SetMethod("sendInputEvent", &WebContents::SendInputEvent)

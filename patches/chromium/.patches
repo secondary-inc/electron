@@ -1,4 +1,5 @@
 build_gn.patch
+feat_browser_link_preview_routing.patch
 fix_zip_embedded_nul_names.patch
 fix_scripting_update_persistence.patch
 fix_disabled_dynamic_script_restore.patch
