@@ -7,7 +7,8 @@
 namespace extensions {
 std::string WorkCommandShortcut(content::BrowserContext* context,
                                 const std::string& id, const std::string& name) {
-  const auto* stored = ExtensionPrefs::Get(context)->ReadPrefAsDictionary(id, "iris_command_shortcuts");
+  constexpr PrefMap pref{"iris_command_shortcuts", kDictionary, PrefScope::kExtensionSpecific};
+  const auto* stored = ExtensionPrefs::Get(context)->ReadPrefAsDictionary(id, pref);
   const auto* value = stored ? stored->FindString(name) : nullptr;
   return value && value->size() <= 64 ? *value : "";
 }
