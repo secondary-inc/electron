@@ -69,6 +69,8 @@ class Extensions final : public gin::Wrappable<Extensions>,
                            const std::string& extension_id, int tab_id);
   base::ListValue GetCommands(gin_helper::ErrorThrower thrower,
                               const std::string& extension_id);
+  void SetCommandShortcuts(gin_helper::ErrorThrower thrower,
+                           const std::string& extension_id, base::DictValue bindings);
   void RunCommand(gin_helper::ErrorThrower thrower,
                   const std::string& extension_id, const std::string& name,
                   int tab_id);

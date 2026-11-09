@@ -23,6 +23,7 @@
 #include "shell/browser/extensions/api/context_menus/context_menus_api.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "extensions/common/api/commands/commands_handler.h"
+#include "shell/browser/extensions/api/commands/commands_api.h"
 #include "shell/browser/extensions/api/permissions/permissions_api_helpers.h"
 #include "shell/common/extensions/api/permissions.h"
 
@@ -436,6 +437,7 @@ void Extensions::ClearPermissionGrants(gin_helper::ErrorThrower thrower,
   }
   auto* prefs = extensions::ExtensionPrefs::Get(browser_context());
   prefs->UpdateExtensionPref(extension_id, "iris_context_menus", std::nullopt);
+  prefs->UpdateExtensionPref(extension_id, "iris_command_shortcuts", std::nullopt);
   prefs->SetDesiredActivePermissions(extension_id, extensions::PermissionSet());
   if (auto granted = prefs->GetGrantedPermissions(extension_id))
     prefs->RemoveGrantedPermissions(extension_id, *granted);
@@ -620,9 +622,33 @@ base::ListValue Extensions::GetCommands(gin_helper::ErrorThrower thrower,
   if (const auto* commands = extensions::CommandsInfo::GetNamedCommands(extension)) {
     for (const auto& [name, command] : *commands)
       result.Append(base::DictValue().Set("name", name)
-          .Set("description", base::UTF16ToUTF8(command.description())));
+          .Set("description", base::UTF16ToUTF8(command.description()))
+          .Set("shortcut", extensions::WorkCommandShortcut(browser_context(), extension_id, name)));
   }
   return result;
+}
+
+void Extensions::SetCommandShortcuts(gin_helper::ErrorThrower thrower,
+                                     const std::string& extension_id,
+                                     base::DictValue bindings) {
+  const auto* extension = extensions::ExtensionRegistry::Get(browser_context())
+                              ->enabled_extensions().GetByID(extension_id);
+  const auto* commands = extension ? extensions::CommandsInfo::GetNamedCommands(extension) : nullptr;
+  if (!extension || bindings.size() > 100) {
+    thrower.ThrowError("Enabled extension and bounded command bindings required");
+    return;
+  }
+  std::set<std::string> used;
+  for (const auto [name, value] : bindings) {
+    if (!commands || !commands->contains(name) || name.empty() || name[0] == '_' ||
+        !value.is_string() || value.GetString().empty() ||
+        value.GetString().size() > 64 || !used.insert(value.GetString()).second) {
+      thrower.ThrowError("Invalid named command binding");
+      return;
+    }
+  }
+  extensions::ExtensionPrefs::Get(browser_context())->UpdateExtensionPref(
+      extension_id, "iris_command_shortcuts", base::Value(std::move(bindings)));
 }
 
 void Extensions::RunCommand(gin_helper::ErrorThrower thrower,
@@ -717,6 +743,7 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("getActionState", &Extensions::GetActionState)
       .SetMethod("setActionPinned", &Extensions::SetActionPinned)
       .SetMethod("activateActionPopup", &Extensions::ActivateActionPopup)
+      .SetMethod("setCommandShortcuts", &Extensions::SetCommandShortcuts)
       .SetMethod("getCommands", &Extensions::GetCommands)
       .SetMethod("runCommand", &Extensions::RunCommand)
       .SetMethod("clickAction", &Extensions::ClickAction);

@@ -4,6 +4,8 @@
 #define ELECTRON_SHELL_BROWSER_EXTENSIONS_API_COMMANDS_COMMANDS_API_H_
 #include "extensions/browser/extension_function.h"
 namespace extensions {
+std::string WorkCommandShortcut(content::BrowserContext* context,
+                                const std::string& id, const std::string& name);
 class CommandsGetAllFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("commands.getAll", COMMANDS_GETALL)
