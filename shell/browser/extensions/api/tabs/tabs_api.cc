@@ -901,6 +901,8 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
   std::optional<tabs::Update::Params> params =
       tabs::Update::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
+  if (params->update_properties.opener_tab_id)
+    return RespondNow(Error("Changing an existing tab opener is not supported"));
 
   auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
                                   : GetActiveElectronTab(browser_context());
