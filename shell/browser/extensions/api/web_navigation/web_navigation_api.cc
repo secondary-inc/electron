@@ -146,6 +146,8 @@ ExtensionFunction::ResponseAction WebNavigationGetFrameFunction::Run() {
           (document_id && Frames::GetDocumentId(frame).ToString() != *document_id)) return;
       auto details = FrameDetails(frame);
       details.Set("errorOccurred", frame->IsErrorDocument());
+      details.Remove("frameId");
+      details.Remove("processId");
       result = base::Value(std::move(details));
     });
   }
