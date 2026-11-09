@@ -2,6 +2,7 @@
 // Use of this source code is governed by the MIT license.
 #include "shell/browser/extensions/api/web_navigation/web_navigation_api.h"
 #include <map>
+#include <set>
 #include <string>
 #include "base/supports_user_data.h"
 #include "base/time/time.h"
@@ -52,6 +53,19 @@ class NavigationObserver : public base::SupportsUserData::Data,
   }
   void RenderFrameDeleted(content::RenderFrameHost* frame) override {
     urls_.erase(frame->GetGlobalId());
+    errors_.erase(frame->GetGlobalId());
+  }
+  bool ErrorOccurred(content::RenderFrameHost* frame) const {
+    return frame->IsErrorDocument() || errors_.contains(frame->GetGlobalId());
+  }
+  void DidFailLoad(content::RenderFrameHost* frame, const GURL& url, int error) override {
+    if (!Managed(web_contents()) || !VisibleURL(url) || !frame->IsActive() ||
+        errors_.contains(frame->GetGlobalId())) return;
+    errors_.insert(frame->GetGlobalId());
+    auto details = FrameDetails(frame);
+    details.Set("error", net::ErrorToString(error));
+    Dispatch(std::move(details), events::WEB_NAVIGATION_ON_ERROR_OCCURRED,
+             "webNavigation.onErrorOccurred", url);
   }
   void DidFinishNavigation(content::NavigationHandle* nav) override {
     if (!Managed(web_contents()) || !VisibleURL(nav->GetURL())) return;
@@ -59,6 +73,7 @@ class NavigationObserver : public base::SupportsUserData::Data,
     events::HistogramValue histogram = events::WEB_NAVIGATION_ON_COMMITTED;
     std::string name = "webNavigation.onCommitted";
     if (!nav->HasCommitted() || nav->IsErrorPage()) {
+      if (nav->HasCommitted()) errors_.insert(nav->GetRenderFrameHost()->GetGlobalId());
       name = "webNavigation.onErrorOccurred";
       histogram = events::WEB_NAVIGATION_ON_ERROR_OCCURRED;
       details.Set("processId", -1);
@@ -82,6 +97,7 @@ class NavigationObserver : public base::SupportsUserData::Data,
         histogram = fragment ? events::WEB_NAVIGATION_ON_REFERENCE_FRAGMENT_UPDATED : events::WEB_NAVIGATION_ON_HISTORY_STATE_UPDATED;
       }
       urls_[id] = nav->GetURL();
+      if (!nav->IsSameDocument()) errors_.erase(id);
       auto transition = nav->GetPageTransition();
       details.Set("transitionType", ui::PageTransitionCoreTypeIs(transition, ui::PAGE_TRANSITION_AUTO_TOPLEVEL) ? "start_page" : ui::PageTransitionGetCoreTransitionString(transition));
       base::ListValue qualifiers;
@@ -91,22 +107,31 @@ class NavigationObserver : public base::SupportsUserData::Data,
       if (transition & ui::PAGE_TRANSITION_FROM_ADDRESS_BAR) qualifiers.Append("from_address_bar");
       details.Set("transitionQualifiers", std::move(qualifiers));
     }
+    Dispatch(std::move(details), histogram, name, nav->GetURL());
+  }
+ private:
+  void Dispatch(base::DictValue details, events::HistogramValue histogram,
+                const std::string& name, const GURL& url) {
     auto* contents = electron::api::WebContents::From(web_contents());
     auto* router = EventRouter::Get(web_contents()->GetBrowserContext());
     if (!contents || !router) return;
     details.Set("tabId", contents->ID());
-    details.Set("url", nav->GetURL().spec());
+    details.Set("url", url.spec());
     details.Set("timeStamp", base::Time::Now().InMillisecondsFSinceUnixEpoch());
     base::ListValue args;
     args.Append(std::move(details));
     auto event = std::make_unique<Event>(histogram, name, std::move(args), web_contents()->GetBrowserContext());
     event->filter_info = mojom::EventFilteringInfo::New();
-    event->filter_info->url = nav->GetURL();
+    event->filter_info->url = url;
     router->BroadcastEvent(std::move(event));
   }
- private:
   std::map<content::GlobalRenderFrameHostId, GURL> urls_;
+  std::set<content::GlobalRenderFrameHostId> errors_;
 };
+bool ErrorOccurred(content::WebContents* wc, content::RenderFrameHost* frame) {
+  auto* observer = static_cast<NavigationObserver*>(wc->GetUserData(kObserver));
+  return observer ? observer->ErrorOccurred(frame) : frame->IsErrorDocument();
+}
 bool Queryable(content::RenderFrameHost* frame) {
   return frame->IsActive() && VisibleURL(frame->GetLastCommittedURL());
 }
@@ -125,7 +150,7 @@ ExtensionFunction::ResponseAction WebNavigationGetAllFramesFunction::Run() {
   contents->web_contents()->ForEachRenderFrameHost([&](content::RenderFrameHost* frame) {
     if (!Queryable(frame)) return;
     auto details = FrameDetails(frame);
-    details.Set("errorOccurred", frame->IsErrorDocument());
+    details.Set("errorOccurred", ErrorOccurred(contents->web_contents(), frame));
     result.Append(std::move(details));
   });
   return RespondNow(WithArguments(std::move(result)));
@@ -145,7 +170,7 @@ ExtensionFunction::ResponseAction WebNavigationGetFrameFunction::Run() {
       if (!Queryable(frame) || (frame_id && Frames::GetFrameId(frame) != *frame_id) ||
           (document_id && Frames::GetDocumentId(frame).ToString() != *document_id)) return;
       auto details = FrameDetails(frame);
-      details.Set("errorOccurred", frame->IsErrorDocument());
+      details.Set("errorOccurred", ErrorOccurred(contents->web_contents(), frame));
       details.Remove("frameId");
       details.Remove("processId");
       result = base::Value(std::move(details));
