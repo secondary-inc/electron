@@ -11,6 +11,11 @@
 // renderer.
 
 {
+  "webstorePrivate": {
+    "channel": "stable",
+    "contexts": ["web_page"],
+    "matches": ["https://chromewebstore.google.com/*"]
+  },
   "commands": {
     "channel": "stable",
     "extension_types": ["extension"],

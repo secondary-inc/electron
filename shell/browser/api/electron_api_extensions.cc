@@ -14,6 +14,7 @@
 #include "base/strings/string_util.h"
 #include "base/task/thread_pool.h"
 #include "components/crx_file/crx_verifier.h"
+#include "components/crx_file/id_util.h"
 #include "third_party/zlib/google/zip_reader.h"
 #include "content/public/browser/render_frame_host.h"
 #include "extensions/browser/extension_api_frame_id_map.h"
@@ -152,6 +153,7 @@ base::DictValue PrepareSignedPackage(const base::FilePath& source,
   base::DictValue result;
   result.Set("path", directory.AsUTF8Unsafe());
   result.Set("extensionId", extension_id);
+  result.Set("originalManifest", manifest_json);
   result.Set("temporaryDirectory", temporary.Take().AsUTF8Unsafe());
   return result;
 }
@@ -715,6 +717,22 @@ void Extensions::NotifyInstalled(gin_helper::ErrorThrower thrower,
   // loads, restore, disable/enable and failed-update rollback must not emit it.
   extensions::RuntimeEventRouter::DispatchOnInstalledEvent(
       browser_context(), extension_id, previous, false);
+  extensions::ExtensionRegistry::Get(browser_context())->TriggerOnInstalled(
+      extension, !previous_version.empty());
+}
+
+void Extensions::NotifyUninstalled(gin_helper::ErrorThrower thrower,
+                                    const std::string& extension_id) {
+  if (!crx_file::id_util::IdIsValid(extension_id) ||
+      extensions::ExtensionRegistry::Get(browser_context())->GetInstalledExtension(extension_id)) {
+    thrower.ThrowError("A removed extension ID is required");
+    return;
+  }
+  base::ListValue args;
+  args.Append(extension_id);
+  extensions::EventRouter::Get(browser_context())->BroadcastEvent(
+      std::make_unique<extensions::Event>(extensions::events::MANAGEMENT_ON_UNINSTALLED,
+          "management.onUninstalled", std::move(args), browser_context()));
 }
 
 void Extensions::RunCommand(gin_helper::ErrorThrower thrower,
@@ -813,6 +831,7 @@ gin::ObjectTemplateBuilder Extensions::GetObjectTemplateBuilder(
       .SetMethod("getCommands", &Extensions::GetCommands)
       .SetMethod("runCommand", &Extensions::RunCommand)
       .SetMethod("notifyInstalled", &Extensions::NotifyInstalled)
+      .SetMethod("notifyUninstalled", &Extensions::NotifyUninstalled)
       .SetMethod("getUserScriptsState", &Extensions::GetUserScriptsState)
       .SetMethod("setUserScriptsAllowed", &Extensions::SetUserScriptsAllowed)
       .SetMethod("clickAction", &Extensions::ClickAction);

@@ -9,6 +9,7 @@
 #include "shell/browser/extensions/api/extension_action/extension_action_api.h"
 #include "shell/browser/extensions/api/generated_api_registration.h"
 #include "shell/browser/extensions/api/tabs/tabs_api.h"
+#include "shell/browser/extensions/api/webstore_private/webstore_private_api.h"
 
 namespace extensions {
 
@@ -21,6 +22,7 @@ void ElectronExtensionsBrowserAPIProvider::RegisterExtensionFunctions(
     ExtensionFunctionRegistry* registry) {
   // Generated APIs from Electron.
   api::ElectronGeneratedFunctionRegistry::RegisterAll(registry);
+  RegisterStorePageFunctions(registry);
 }
 
 }  // namespace extensions

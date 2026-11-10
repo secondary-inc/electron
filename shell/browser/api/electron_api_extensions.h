@@ -78,6 +78,8 @@ class Extensions final : public gin::Wrappable<Extensions>,
   void NotifyInstalled(gin_helper::ErrorThrower thrower,
                        const std::string& extension_id,
                        const std::string& previous_version);
+  void NotifyUninstalled(gin_helper::ErrorThrower thrower,
+                         const std::string& extension_id);
   void RunCommand(gin_helper::ErrorThrower thrower,
                   const std::string& extension_id, const std::string& name,
                   int tab_id);
