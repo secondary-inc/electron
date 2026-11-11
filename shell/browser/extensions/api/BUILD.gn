@@ -43,7 +43,7 @@ function_registration("api_registration") {
     "extension",
   ]
   inputs = [
-    "//chrome/browser/extensions/api/module/module.h",
+    "extension/extension_api.h",
     "extension_action/extension_action_api.h",
   ]
 

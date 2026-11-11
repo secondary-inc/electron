@@ -6,6 +6,8 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
+#include <utility>
 
 #include "base/no_destructor.h"
 #include "base/notimplemented.h"
@@ -24,6 +26,25 @@ using extensions::ExtensionsClient;
 namespace electron {
 
 namespace {
+
+// Chromium's immutable core feature owns webstorePrivate. Its delegated check
+// must not enable the core testing branch for arbitrary websites. Document,
+// managed-window, visibility and gesture checks remain in the native API.
+bool IsOfficialWebStoreContext(
+    std::string_view api_full_name,
+    const extensions::Extension* extension,
+    extensions::mojom::ContextType context,
+    const GURL& url,
+    extensions::Feature::Platform platform,
+    int context_id,
+    bool check_developer_mode,
+    const extensions::ContextData& context_data) {
+  return !extension && context == extensions::mojom::ContextType::kWebPage &&
+         url.is_valid() && url.SchemeIs("https") &&
+         url.host_piece() == "chromewebstore.google.com" &&
+         url.EffectiveIntPort() == 443 && !url.has_username() &&
+         !url.has_password();
+}
 
 // TODO(jamescook): Refactor ChromePermissionsMessageProvider so we can share
 // code. For now, this implementation does nothing.
@@ -66,8 +87,10 @@ ElectronExtensionsClient::ElectronExtensionsClient()
     : webstore_base_url_(extension_urls::kChromeWebstoreBaseURL),
       new_webstore_base_url_(extension_urls::kNewChromeWebstoreBaseURL),
       webstore_update_url_(extension_urls::kChromeWebstoreUpdateURL) {
-  SetFeatureDelegatedAvailabilityCheckMap(
-      extensions::user_scripts_availability::CreateAvailabilityCheckMap());
+  auto availability =
+      extensions::user_scripts_availability::CreateAvailabilityCheckMap();
+  availability.emplace("webstorePrivate", &IsOfficialWebStoreContext);
+  SetFeatureDelegatedAvailabilityCheckMap(std::move(availability));
   AddAPIProvider(std::make_unique<extensions::CoreExtensionsAPIProvider>());
   AddAPIProvider(std::make_unique<ElectronExtensionsAPIProvider>());
 }

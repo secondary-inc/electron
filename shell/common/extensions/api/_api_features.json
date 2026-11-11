@@ -14,11 +14,6 @@
   "history": {"channel":"stable","dependencies":["permission:history"],"contexts":["privileged_extension"]},
   "bookmarks": {"channel":"stable","dependencies":["permission:bookmarks"],"contexts":["privileged_extension"]},
   "sessions": {"channel":"stable","dependencies":["permission:sessions"],"contexts":["privileged_extension"]},
-  "webstorePrivate": {
-    "channel": "stable",
-    "contexts": ["web_page"],
-    "matches": ["https://chromewebstore.google.com/*"]
-  },
   "commands": {
     "channel": "stable",
     "extension_types": ["extension"],
@@ -104,11 +99,6 @@
       "chrome://print/*"
     ]
   }],
-  "permissions": {
-    "channel": "stable",
-    "extension_types": ["extension"],
-    "contexts": ["privileged_extension"]
-  },
   "tabs": {
     "channel": "stable",
     "extension_types": ["extension"],
