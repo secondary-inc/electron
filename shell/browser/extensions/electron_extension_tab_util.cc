@@ -242,7 +242,7 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
       auto change = changes.Clone();
       if (!privileged) { change.Remove("url"); change.Remove("title"); change.Remove("favIconUrl"); }
       if (!created && change.empty()) continue;
-      api::tabs::Tab tab;
+      iris_api::tabs::Tab tab;
       tab.id = contents->ID();
       tab.window_id = ElectronBrowserTabWindowId(wc);
       tab.index = ElectronBrowserTabIndex(wc);
@@ -252,10 +252,10 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
       if (const int opener = ElectronBrowserTabOpener(wc); opener >= 0) tab.opener_tab_id = opener;
       tab.incognito = context->IsOffTheRecord();
       tab.group_id = -1; tab.split_view_id = -1;
-      tab.status = loading ? api::tabs::TabStatus::kLoading : api::tabs::TabStatus::kComplete;
+      tab.status = loading ? iris_api::tabs::TabStatus::kLoading : iris_api::tabs::TabStatus::kComplete;
       tab.last_accessed = wc->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
       tab.audible = audible;
-      api::tabs::MutedInfo info; info.muted = muted;
+      iris_api::tabs::MutedInfo info; info.muted = muted;
       tab.muted_info = std::move(info);
       if (privileged) {
         tab.url = url.spec();

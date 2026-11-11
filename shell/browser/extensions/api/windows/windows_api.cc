@@ -79,15 +79,15 @@ base::DictValue Describe(int id, const Window& window, bool populate,
     base::ListValue tabs;
     for (auto* contents : window.tabs) {
       auto* wc = contents->web_contents();
-      api::tabs::Tab tab;
+      iris_api::tabs::Tab tab;
       tab.id = contents->ID(); tab.window_id = id; tab.index = ElectronBrowserTabIndex(wc);
       tab.active = IsElectronBrowserTabActive(contents); tab.selected = tab.active; tab.highlighted = tab.active;
       if (const int opener = ElectronBrowserTabOpener(wc); opener >= 0) tab.opener_tab_id = opener;
       tab.pinned = IsElectronBrowserTabPinned(wc); tab.incognito = wc->GetBrowserContext()->IsOffTheRecord();
       tab.group_id = -1; tab.split_view_id = -1;
-      tab.status = wc->IsLoading() ? api::tabs::TabStatus::kLoading : api::tabs::TabStatus::kComplete;
+      tab.status = wc->IsLoading() ? iris_api::tabs::TabStatus::kLoading : iris_api::tabs::TabStatus::kComplete;
       tab.audible = wc->IsCurrentlyAudible();
-      tab.muted_info = api::tabs::MutedInfo();
+      tab.muted_info = iris_api::tabs::MutedInfo();
       tab.muted_info->muted = wc->IsAudioMuted();
       const auto& url = wc->GetLastCommittedURL();
       if (extension->permissions_data()->HasAPIPermissionForTab(contents->ID(), mojom::APIPermissionID::kTab) ||

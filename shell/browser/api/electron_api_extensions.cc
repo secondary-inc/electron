@@ -400,7 +400,7 @@ void Extensions::ClickContextMenu(
   }
   extensions::ActiveTabPermissionGranter::CreateForWebContents(contents, tab_id, browser_context());
   extensions::ActiveTabPermissionGranter::FromWebContents(contents)->GrantIfRequested(extension);
-  extensions::api::tabs::Tab value;
+  extensions::iris_api::tabs::Tab value;
   value.id = tab_id; value.active = true; value.selected = true; value.highlighted = true;
   value.pinned = extensions::IsElectronBrowserTabPinned(contents);
   value.window_id = extensions::ElectronBrowserTabWindowId(contents);
@@ -616,7 +616,7 @@ void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
   auto* contents = tab->web_contents();
   extensions::ActiveTabPermissionGranter::CreateForWebContents(contents, tab_id, browser_context());
   extensions::ActiveTabPermissionGranter::FromWebContents(contents)->GrantIfRequested(extension);
-  extensions::api::tabs::Tab value;
+  extensions::iris_api::tabs::Tab value;
   value.id = tab_id;
   value.active = true;
   value.pinned = extensions::IsElectronBrowserTabPinned(contents);
@@ -628,8 +628,8 @@ void Extensions::ClickAction(gin_helper::ErrorThrower thrower,
   value.group_id = -1;
   value.split_view_id = -1;
   value.last_accessed = contents->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
-  value.status = contents->IsLoading() ? extensions::api::tabs::TabStatus::kLoading :
-                                        extensions::api::tabs::TabStatus::kComplete;
+  value.status = contents->IsLoading() ? extensions::iris_api::tabs::TabStatus::kLoading :
+                                        extensions::iris_api::tabs::TabStatus::kComplete;
   const auto& url = contents->GetLastCommittedURL();
   // Only requested temporary permissions were granted by this explicit action.
   if (extension->permissions_data()->HasAPIPermissionForTab(
@@ -772,7 +772,7 @@ void Extensions::RunCommand(gin_helper::ErrorThrower thrower,
   auto* contents = tab->web_contents();
   extensions::ActiveTabPermissionGranter::CreateForWebContents(contents, tab_id, browser_context());
   extensions::ActiveTabPermissionGranter::FromWebContents(contents)->GrantIfRequested(extension);
-  extensions::api::tabs::Tab value;
+  extensions::iris_api::tabs::Tab value;
   value.id = tab_id; value.active = true; value.selected = true; value.highlighted = true;
   value.pinned = extensions::IsElectronBrowserTabPinned(contents);
   value.window_id = extensions::ElectronBrowserTabWindowId(contents);
@@ -780,8 +780,8 @@ void Extensions::RunCommand(gin_helper::ErrorThrower thrower,
   value.incognito = browser_context()->IsOffTheRecord();
   value.group_id = -1; value.split_view_id = -1;
   value.last_accessed = contents->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
-  value.status = contents->IsLoading() ? extensions::api::tabs::TabStatus::kLoading :
-                                       extensions::api::tabs::TabStatus::kComplete;
+  value.status = contents->IsLoading() ? extensions::iris_api::tabs::TabStatus::kLoading :
+                                       extensions::iris_api::tabs::TabStatus::kComplete;
   const auto& url = contents->GetLastCommittedURL();
   if (extension->permissions_data()->HasAPIPermissionForTab(
           tab_id, extensions::mojom::APIPermissionID::kTab) ||
