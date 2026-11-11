@@ -42,9 +42,13 @@ void ElectronExtensionsRendererAPIProvider::AddBindingsSystemHooks(
 
 void ElectronExtensionsRendererAPIProvider::PopulateSourceMap(
     extensions::ResourceBundleSourceMap* source_map) const {
-  source_map->RegisterSource("action", IDR_IRIS_ACTION_BINDINGS);
-  source_map->RegisterSource("browserAction", IDR_IRIS_BROWSER_ACTION_BINDINGS);
-  source_map->RegisterSource("pageAction", IDR_IRIS_PAGE_ACTION_BINDINGS);
+  static constexpr auto kSources =
+      base::MakeFixedFlatMap<std::string_view, int>({
+          {"action", IDR_IRIS_ACTION_BINDINGS},
+          {"browserAction", IDR_IRIS_BROWSER_ACTION_BINDINGS},
+          {"pageAction", IDR_IRIS_PAGE_ACTION_BINDINGS},
+      });
+  source_map->RegisterSources(kSources);
 }
 
 void ElectronExtensionsRendererAPIProvider::EnableCustomElementAllowlist()
