@@ -1,16 +1,14 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Iris <dev@iris.local>
 Subject: Reject embedded NUL ZIP names before C-string truncation
 
 CRX staging must reject malformed paths rather than extract a truncated name.
+Keep Chromium 156's separate physical and Unicode paths and reject either NUL.
 
 diff --git a/third_party/zlib/google/zip_reader.cc b/third_party/zlib/google/zip_reader.cc
-index 002a1e3ed0..c3fc071e38 100644
 --- a/third_party/zlib/google/zip_reader.cc
 +++ b/third_party/zlib/google/zip_reader.cc
-@@ -304,11 +304,22 @@ bool ZipReader::OpenEntry() {
-     return false;
-   }
- 
+@@ -308,2 +308,8 @@
 +  if (info.size_filename >= path_in_zip.size() ||
 +      std::string_view(path_in_zip.data(), info.size_filename).find('\0') !=
 +          std::string_view::npos) {
@@ -19,9 +17,7 @@ index 002a1e3ed0..c3fc071e38 100644
 +  }
    DCHECK(path_in_zip[info.size_filename] == '\0');
    entry_.path_in_original_encoding = path_in_zip.data();
- 
-   if (info.size_utf8_filename > 0) {
-     // Use the Info-ZIP Unicode Path Extra Field if present.
+@@ -338,2 +344,7 @@
 +    if (std::string_view(info.utf8_filename, info.size_utf8_filename).find('\0') !=
 +        std::string_view::npos) {
 +      LOG(ERROR) << "Invalid ZIP Unicode entry name";
@@ -29,4 +25,3 @@ index 002a1e3ed0..c3fc071e38 100644
 +    }
      DCHECK(info.utf8_filename[info.size_utf8_filename] == '\0');
      entry_.path_in_original_encoding = info.utf8_filename;
-   }

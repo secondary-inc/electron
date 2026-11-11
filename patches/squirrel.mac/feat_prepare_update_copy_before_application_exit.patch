@@ -1,3 +1,7 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Iris <dev@iris.local>
+Subject: Prepare the verified update copy before application exit
+
 diff --git a/Squirrel/SQRLInstaller+Private.h b/Squirrel/SQRLInstaller+Private.h
 index 1ab932c..aa9378c 100644
 --- a/Squirrel/SQRLInstaller+Private.h

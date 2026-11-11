@@ -1,3 +1,4 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: 💔 <shah@priansh.com>
 Subject: Use embedder tab identity for subframe injection permission checks
 
@@ -15,12 +16,12 @@ diff --git a/extensions/browser/script_executor.cc b/extensions/browser/script_e
 +#include "extensions/browser/extensions_browser_client.h"
  #include "extensions/browser/script_injection_tracker.h"
 @@ -117,4 +118,8 @@
-       int tab_id = -1;
-       if (host_id_.type == mojom::HostID::HostType::kExtensions) {
--        tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
-+        int window_id = -1;
-+        ExtensionsBrowserClient::Get()->GetTabAndWindowIdForWebContents(
-+            web_contents, &tab_id, &window_id);
-+        if (tab_id < 0)
-+          tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
-       }
+     int tab_id = -1;
+     if (host_id_.type == mojom::HostID::HostType::kExtensions) {
+-      tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
++      int window_id = -1;
++      ExtensionsBrowserClient::Get()->GetTabAndWindowIdForWebContents(
++          web_contents, &tab_id, &window_id);
++      if (tab_id < 0)
++        tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
+     }

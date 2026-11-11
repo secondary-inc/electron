@@ -1,3 +1,5 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Iris <dev@iris.local>
 Subject: Route opted-in external link clicks before renderer beforeunload
 
 diff --git a/third_party/blink/public/common/renderer_preferences/renderer_preferences.h b/third_party/blink/public/common/renderer_preferences/renderer_preferences.h

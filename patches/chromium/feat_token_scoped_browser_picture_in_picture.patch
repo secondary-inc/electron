@@ -1,3 +1,5 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Iris <dev@iris.local>
 Subject: Add token-scoped embedder video Picture in Picture admission
 
 Carry a browser-only request identity through media IPC, preserving untagged
