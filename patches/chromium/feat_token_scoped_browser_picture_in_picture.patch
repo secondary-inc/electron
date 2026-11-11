@@ -260,7 +260,7 @@ index 3dfda5db7f..853ab1818b 100644
  
    // The given |player_id| has been requested to route audio output to the
 diff --git a/content/public/browser/web_contents_delegate.cc b/content/public/browser/web_contents_delegate.cc
-index 2de5b3392b..c08a27d71d 100644
+index c102480b82..4c84aed186 100644
 --- a/content/public/browser/web_contents_delegate.cc
 +++ b/content/public/browser/web_contents_delegate.cc
 @@ -35,6 +35,11 @@ namespace content {
@@ -272,14 +272,14 @@ index 2de5b3392b..c08a27d71d 100644
 +  return token.empty();
 +}
 +
- WebContents* WebContentsDelegate::OpenURLFromTab(
-     WebContents* source,
-     const OpenURLParams& params,
+ void WebContentsDelegate::WebContentsCreatedWithFullParams(
+     WebContents* source_contents,
+     int opener_render_process_id,
 diff --git a/content/public/browser/web_contents_delegate.h b/content/public/browser/web_contents_delegate.h
-index cd03383472..40df7b6a64 100644
+index 4194c51659..8025f8d48b 100644
 --- a/content/public/browser/web_contents_delegate.h
 +++ b/content/public/browser/web_contents_delegate.h
-@@ -796,6 +796,14 @@ class CONTENT_EXPORT WebContentsDelegate {
+@@ -814,6 +814,14 @@ class CONTENT_EXPORT WebContentsDelegate {
    virtual PictureInPictureResult EnterPictureInPicture(
        WebContents* web_contents);
  
