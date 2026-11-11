@@ -6,27 +6,27 @@
 #include "extensions/browser/extension_function.h"
 
 namespace extensions {
-class PermissionsContainsFunction : public ExtensionFunction {
+class ElectronPermissionsContainsFunction : public ExtensionFunction {
  private:
-  ~PermissionsContainsFunction() override = default;
+  ~ElectronPermissionsContainsFunction() override = default;
   ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("permissions.contains", PERMISSIONS_CONTAINS)
 };
-class PermissionsGetAllFunction : public ExtensionFunction {
+class ElectronPermissionsGetAllFunction : public ExtensionFunction {
  private:
-  ~PermissionsGetAllFunction() override = default;
+  ~ElectronPermissionsGetAllFunction() override = default;
   ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("permissions.getAll", PERMISSIONS_GETALL)
 };
-class PermissionsRequestFunction : public ExtensionFunction {
+class ElectronPermissionsRequestFunction : public ExtensionFunction {
  private:
-  ~PermissionsRequestFunction() override = default;
+  ~ElectronPermissionsRequestFunction() override = default;
   ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("permissions.request", PERMISSIONS_REQUEST)
 };
-class PermissionsRemoveFunction : public ExtensionFunction {
+class ElectronPermissionsRemoveFunction : public ExtensionFunction {
  private:
-  ~PermissionsRemoveFunction() override = default;
+  ~ElectronPermissionsRemoveFunction() override = default;
   ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("permissions.remove", PERMISSIONS_REMOVE)
 };

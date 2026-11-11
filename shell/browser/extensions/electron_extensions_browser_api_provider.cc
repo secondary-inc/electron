@@ -14,6 +14,7 @@
 #include "shell/browser/extensions/api/extension_action/extension_action_api.h"
 #include "shell/browser/extensions/api/generated_api_registration.h"
 #include "shell/browser/extensions/api/tabs/tabs_api.h"
+#include "shell/browser/extensions/api/permissions/permissions_api.h"
 #include "shell/browser/extensions/api/history/history_api.h"
 #include "shell/browser/extensions/api/bookmarks/bookmarks_api.h"
 #include "shell/browser/extensions/api/sessions/sessions_api.h"
@@ -43,10 +44,9 @@ class UnsupportedFunction : public ExtensionFunction {
 // CoreExtensionsBrowserAPIProvider, but every function assumes an
 // embedder-provided WebstorePrivateAPIDelegate, which Electron does not have.
 // A Chromium patch makes every branch of the core "webstorePrivate" feature
-// require a delegated availability check, which fails closed because Electron
-// never registers one, so these should never be dispatched; replace them
-// anyway so that a request that does reach the browser fails with an error
-// rather than dereferencing a null delegate.
+// require a delegated availability check. Iris permits only the official store
+// origin and supplies a bounded subset of handlers below. Replace all remaining
+// handlers so an unsupported request fails rather than using a null delegate.
 constexpr const char* kUnsupportedWebstorePrivateFunctions[] = {
     "webstorePrivate.beginInstallWithManifest3",
     "webstorePrivate.completeInstall",
@@ -90,6 +90,17 @@ void ElectronExtensionsBrowserAPIProvider::RegisterExtensionFunctions(
   // replaces the core registrations.
   OverrideUnsupportedFunctions(registry);
   RegisterStorePageFunctions(registry);
+  registry->RegisterFunction<ElectronPermissionsContainsFunction>();
+  registry->RegisterFunction<ElectronPermissionsGetAllFunction>();
+  registry->RegisterFunction<ElectronPermissionsRequestFunction>();
+  registry->RegisterFunction<ElectronPermissionsRemoveFunction>();
+  // Host-access request UI is not implemented by Iris. Never enter Chromium's
+  // default embedder path without its matching permission prompt.
+  for (const char* name : {"permissions.addHostAccessRequest",
+                           "permissions.removeHostAccessRequest"}) {
+    registry->Register(ExtensionFunctionRegistry::FactoryEntry(
+        &NewExtensionFunction<UnsupportedFunction>, name, functions::UNKNOWN));
+  }
   RegisterElectronHistoryFunctions(registry);
   RegisterElectronBookmarksFunctions(registry);
   RegisterElectronSessionsFunctions(registry);

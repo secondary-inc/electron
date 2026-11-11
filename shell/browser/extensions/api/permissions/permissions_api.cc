@@ -23,8 +23,8 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "shell/browser/extensions/api/permissions/permissions_api_helpers.h"
-#include "shell/common/extensions/api/permissions.h"
+#include "extensions/browser/api/permissions/permissions_api_helpers.h"
+#include "extensions/common/api/permissions.h"
 
 namespace extensions {
 namespace {
@@ -43,7 +43,7 @@ void DispatchPermissionChange(content::BrowserContext* context,
 }
 }  // namespace
 
-ExtensionFunction::ResponseAction PermissionsContainsFunction::Run() {
+ExtensionFunction::ResponseAction ElectronPermissionsContainsFunction::Run() {
   auto params = api::permissions::Contains::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
   std::string error;
@@ -70,14 +70,14 @@ ExtensionFunction::ResponseAction PermissionsContainsFunction::Run() {
       api::permissions::Contains::Results::Create(contains)));
 }
 
-ExtensionFunction::ResponseAction PermissionsGetAllFunction::Run() {
+ExtensionFunction::ResponseAction ElectronPermissionsGetAllFunction::Run() {
   auto permissions = permissions_api_helpers::PackPermissionSet(
       extension()->permissions_data()->active_permissions());
   return RespondNow(ArgumentList(
       api::permissions::GetAll::Results::Create(*permissions)));
 }
 
-ExtensionFunction::ResponseAction PermissionsRequestFunction::Run() {
+ExtensionFunction::ResponseAction ElectronPermissionsRequestFunction::Run() {
   auto params = api::permissions::Request::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
   if (!user_gesture())
@@ -104,7 +104,7 @@ ExtensionFunction::ResponseAction PermissionsRequestFunction::Run() {
   auto details = permissions_api_helpers::PackPermissionSet(*missing)->ToValue();
   using Pending = base::RefCountedData<base::OnceCallback<void(bool)>>;
   auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
-      [](scoped_refptr<PermissionsRequestFunction> function,
+      [](scoped_refptr<ElectronPermissionsRequestFunction> function,
          std::unique_ptr<const PermissionSet> requested, bool allow) {
         auto* context = function->browser_context();
         if (!allow || !context ||
@@ -116,12 +116,12 @@ ExtensionFunction::ResponseAction PermissionsRequestFunction::Run() {
             *requested, function->extension()->permissions_data()->active_permissions());
         auto notify = changed->Clone();
         PermissionsUpdater(context).GrantOptionalPermissions(*function->extension(), *changed,
-            base::BindOnce([](scoped_refptr<PermissionsRequestFunction> function,
+            base::BindOnce([](scoped_refptr<ElectronPermissionsRequestFunction> function,
                               std::unique_ptr<const PermissionSet> changed) {
               DispatchPermissionChange(function->browser_context(), function->extension(), *changed, true);
               function->Respond(function->ArgumentList(api::permissions::Request::Results::Create(true)));
             }, function, std::move(notify)));
-      }, scoped_refptr<PermissionsRequestFunction>(this), std::move(missing)));
+      }, scoped_refptr<ElectronPermissionsRequestFunction>(this), std::move(missing)));
   auto respond = base::BindRepeating([](scoped_refptr<Pending> pending, bool allow) {
     if (pending->data) std::move(pending->data).Run(allow);
   }, pending);
@@ -133,7 +133,7 @@ ExtensionFunction::ResponseAction PermissionsRequestFunction::Run() {
   return did_respond() ? AlreadyResponded() : RespondLater();
 }
 
-ExtensionFunction::ResponseAction PermissionsRemoveFunction::Run() {
+ExtensionFunction::ResponseAction ElectronPermissionsRemoveFunction::Run() {
   auto params = api::permissions::Remove::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
   std::string error;
@@ -158,11 +158,11 @@ ExtensionFunction::ResponseAction PermissionsRemoveFunction::Run() {
   }
   PermissionsUpdater(browser_context()).RevokeOptionalPermissions(
       *extension(), *changed, PermissionsUpdater::RemoveType::kSoft,
-      base::BindOnce([](scoped_refptr<PermissionsRemoveFunction> function,
+      base::BindOnce([](scoped_refptr<ElectronPermissionsRemoveFunction> function,
                         std::unique_ptr<const PermissionSet> changed) {
         DispatchPermissionChange(function->browser_context(), function->extension(), *changed, false);
         function->Respond(function->ArgumentList(api::permissions::Remove::Results::Create(true)));
-      }, scoped_refptr<PermissionsRemoveFunction>(this), std::move(notify)));
+      }, scoped_refptr<ElectronPermissionsRemoveFunction>(this), std::move(notify)));
   return did_respond() ? AlreadyResponded() : RespondLater();
 }
 
