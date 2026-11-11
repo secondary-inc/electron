@@ -1,0 +1,505 @@
+Subject: Add token-scoped embedder video Picture in Picture admission
+
+Carry a browser-only request identity through media IPC, preserving untagged
+manual sessions and checking the embedder before creating a player.
+
+diff --git a/content/browser/media/media_web_contents_observer_unittest.cc b/content/browser/media/media_web_contents_observer_unittest.cc
+index 558b67f69a..2e2c032c16 100644
+--- a/content/browser/media/media_web_contents_observer_unittest.cc
++++ b/content/browser/media/media_web_contents_observer_unittest.cc
+@@ -32,6 +32,7 @@ class TestMediaPlayer final : public media::mojom::MediaPlayer {
+   void RequestSeekBackward(base::TimeDelta seek_time) override {}
+   void RequestSeekTo(base::TimeDelta seek_time) override {}
+   void RequestEnterPictureInPicture() override {}
++  void RequestEnterBrowserPictureInPicture(const std::string&) override {}
+   void RequestMute(bool mute) override {}
+   void SetVolumeMultiplier(double multiplier) override {}
+   void SetPersistentState(bool persistent) override {}
+diff --git a/content/browser/media/session/media_session_controller.cc b/content/browser/media/session/media_session_controller.cc
+index 38d3946d95..35ef4a1363 100644
+--- a/content/browser/media/session/media_session_controller.cc
++++ b/content/browser/media/session/media_session_controller.cc
+@@ -104,6 +104,15 @@ void MediaSessionController::OnEnterPictureInPicture(int player_id) {
+       ->RequestEnterPictureInPicture();
+ }
+ 
++bool MediaSessionController::OnEnterBrowserPictureInPicture(
++    int player_id, const std::string& token) {
++  DCHECK_EQ(player_id_, player_id);
++  auto* observer = web_contents_->media_web_contents_observer();
++  if (!observer->IsMediaPlayerRemoteAvailable(id_)) return false;
++  observer->GetMediaPlayerRemote(id_)->RequestEnterBrowserPictureInPicture(token);
++  return true;
++}
++
+ void MediaSessionController::OnSetAudioSinkId(
+     int player_id,
+     const std::string& raw_device_id) {
+diff --git a/content/browser/media/session/media_session_controller.h b/content/browser/media/session/media_session_controller.h
+index 92abafb566..d877051ccb 100644
+--- a/content/browser/media/session/media_session_controller.h
++++ b/content/browser/media/session/media_session_controller.h
+@@ -65,6 +65,8 @@ class CONTENT_EXPORT MediaSessionController
+   void OnSeekTo(int player_id, base::TimeDelta seek_time) override;
+   void OnSetVolumeMultiplier(int player_id, double volume_multiplier) override;
+   void OnEnterPictureInPicture(int player_id) override;
++  bool OnEnterBrowserPictureInPicture(int player_id,
++                                      const std::string& token) override;
+   void OnSetAudioSinkId(int player_id,
+                         const std::string& raw_device_id) override;
+   void OnSetMute(int player_id, bool mute) override;
+diff --git a/content/browser/media/session/media_session_impl.cc b/content/browser/media/session/media_session_impl.cc
+index c6c1d4a395..809881e772 100644
+--- a/content/browser/media/session/media_session_impl.cc
++++ b/content/browser/media/session/media_session_impl.cc
+@@ -167,6 +167,19 @@ MediaSessionImpl::PlayerIdentifier::PlayerIdentifier(
+     int player_id)
+     : observer(observer), player_id(player_id) {}
+ 
++bool MediaSession::CanEnterBrowserPictureInPicture() const {
++  return false;
++}
++
++bool MediaSession::RequestBrowserPictureInPicture(const std::string& token) {
++  return false;
++}
++
++bool MediaSessionPlayerObserver::OnEnterBrowserPictureInPicture(
++    int player_id, const std::string& token) {
++  return false;
++}
++
+ // static
+ MediaSession* MediaSession::Get(WebContents* web_contents) {
+   return MediaSessionImpl::Get(web_contents);
+@@ -2246,6 +2259,29 @@ bool MediaSessionImpl::IsActivelyUsingCameraOrMicrophone() const {
+              media_session::mojom::CameraState::kTurnedOn;
+ }
+ 
++bool MediaSessionImpl::CanEnterBrowserPictureInPicture() const {
++  // Explicitly approved embedder behavior, not a global feature-flag override.
++  // Do not commandeer a site's own PiP media-session handler.
++  if (!IsPictureInPictureAvailable() ||
++      IsActivelyUsingCameraOrMicrophone() || normal_players_.size() != 1u ||
++      (routed_service_ && routed_service_->actions().contains(
++          media_session::mojom::MediaSessionAction::kEnterPictureInPicture)))
++    return false;
++  auto& player = normal_players_.begin()->first;
++  auto* frame = player.observer->render_frame_host();
++  if (!frame || !frame->IsInPrimaryMainFrame() ||
++      player.observer->IsPaused(player.player_id))
++    return false;
++  return true;
++}
++
++bool MediaSessionImpl::RequestBrowserPictureInPicture(const std::string& token) {
++  if (token.empty() || token.size() > 128 || !CanEnterBrowserPictureInPicture())
++    return false;
++  auto& player = normal_players_.begin()->first;
++  return player.observer->OnEnterBrowserPictureInPicture(player.player_id, token);
++}
++
+ bool MediaSessionImpl::CanEnterBrowserInitiatedAutomaticPictureInPicture()
+     const {
+   if (!IsBrowserInitiatedPictureInPictureEnabled()) {
+diff --git a/content/browser/media/session/media_session_impl.h b/content/browser/media/session/media_session_impl.h
+index 9f25fb104e..118e079007 100644
+--- a/content/browser/media/session/media_session_impl.h
++++ b/content/browser/media/session/media_session_impl.h
+@@ -280,6 +280,8 @@ class MediaSessionImpl : public MediaSession,
+ 
+   // Enter picture-in-picture.
+   void EnterPictureInPicture() override;
++  bool CanEnterBrowserPictureInPicture() const override;
++  bool RequestBrowserPictureInPicture(const std::string& token) override;
+ 
+   // Exit picture-in-picture.
+   void ExitPictureInPicture() override;
+diff --git a/content/browser/media/session/media_session_player_observer.h b/content/browser/media/session/media_session_player_observer.h
+index 3332c7942e..5b582ba2af 100644
+--- a/content/browser/media/session/media_session_player_observer.h
++++ b/content/browser/media/session/media_session_player_observer.h
+@@ -50,6 +50,8 @@ class MediaSessionPlayerObserver {
+ 
+   // The given |player_id| has been requested picture-in-picture.
+   virtual void OnEnterPictureInPicture(int player_id) = 0;
++  virtual bool OnEnterBrowserPictureInPicture(int player_id,
++                                              const std::string& token);
+ 
+   // The given |player_id| has been requested to route audio output to the
+   // specified audio device.
+diff --git a/content/browser/picture_in_picture/picture_in_picture_service_impl.cc b/content/browser/picture_in_picture/picture_in_picture_service_impl.cc
+index 232f4b6509..c5f927125d 100644
+--- a/content/browser/picture_in_picture/picture_in_picture_service_impl.cc
++++ b/content/browser/picture_in_picture/picture_in_picture_service_impl.cc
+@@ -10,6 +10,8 @@
+ #include "content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h"
+ #include "content/browser/renderer_host/render_frame_host_impl.h"
+ #include "content/public/browser/web_contents_delegate.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/weak_document_ptr.h"
+ 
+ namespace content {
+ 
+@@ -40,6 +42,51 @@ void PictureInPictureServiceImpl::StartSession(
+     const gfx::Rect& source_bounds,
+     blink::mojom::ImmersiveOptionsPtr immersive_options,
+     StartSessionCallback callback) {
++  StartSessionInternal("", player_id, std::move(player_remote), surface_id,
++      natural_size, show_play_pause_button, std::move(observer), source_bounds,
++      std::move(immersive_options), std::move(callback));
++}
++
++void PictureInPictureServiceImpl::StartBrowserSession(
++    const std::string& request_token,
++    uint32_t player_id,
++    mojo::PendingAssociatedRemote<media::mojom::MediaPlayer> player_remote,
++    const viz::SurfaceId& surface_id,
++    const gfx::Size& natural_size,
++    bool show_play_pause_button,
++    mojo::PendingRemote<blink::mojom::PictureInPictureSessionObserver> observer,
++    const gfx::Rect& source_bounds,
++    StartBrowserSessionCallback callback) {
++  if (request_token.empty() || request_token.size() > 128) {
++    std::move(callback).Run({}, {});
++    return;
++  }
++  StartSessionInternal(request_token, player_id, std::move(player_remote),
++      surface_id, natural_size, show_play_pause_button, std::move(observer),
++      source_bounds, nullptr, std::move(callback));
++}
++
++void PictureInPictureServiceImpl::StartSessionInternal(
++    const std::string& request_token,
++    uint32_t player_id,
++    mojo::PendingAssociatedRemote<media::mojom::MediaPlayer> player_remote,
++    const viz::SurfaceId& surface_id,
++    const gfx::Size& natural_size,
++    bool show_play_pause_button,
++    mojo::PendingRemote<blink::mojom::PictureInPictureSessionObserver> observer,
++    const gfx::Rect& source_bounds,
++    blink::mojom::ImmersiveOptionsPtr immersive_options,
++    StartSessionCallback callback) {
++  auto document = render_frame_host().GetWeakDocumentPtr();
++  auto* contents = WebContents::FromRenderFrameHost(&render_frame_host());
++  auto* delegate = contents ? contents->GetDelegate() : nullptr;
++  const bool allowed = delegate
++      ? delegate->CanStartBrowserPictureInPicture(&render_frame_host(), request_token)
++      : request_token.empty();
++  if (!allowed || !document.AsRenderFrameHostIfValid()) {
++    std::move(callback).Run({}, {});
++    return;
++  }
+   gfx::Size window_size;
+   mojo::PendingRemote<blink::mojom::PictureInPictureSession> session_remote;
+ 
+@@ -49,12 +96,22 @@ void PictureInPictureServiceImpl::StartSession(
+       show_play_pause_button, std::move(observer), source_bounds,
+       std::move(immersive_options), &session_remote, &window_size);
+ 
+-  if (result == PictureInPictureResult::kSuccess) {
++  auto* frame = document.AsRenderFrameHostIfValid();
++  if (!frame) {
++    std::move(callback).Run({}, {});
++    return;
++  }
++  contents = WebContents::FromRenderFrameHost(frame);
++  if (contents && contents->GetDelegate())
++    contents->GetDelegate()->DidStartBrowserPictureInPicture(
++        frame, request_token, result == PictureInPictureResult::kSuccess);
++  frame = document.AsRenderFrameHostIfValid();
++  if (frame && result == PictureInPictureResult::kSuccess) {
+     // Frames are to be blocklisted from the back-forward cache because the
+     // picture-in-picture continues to be displayed while the page is in the
+     // cache instead of closing.
+-    static_cast<RenderFrameHostImpl&>(render_frame_host())
+-        .OnBackForwardCacheDisablingStickyFeatureUsed(
++    static_cast<RenderFrameHostImpl*>(frame)
++        ->OnBackForwardCacheDisablingStickyFeatureUsed(
+             blink::scheduler::WebSchedulerTrackedFeature::kPictureInPicture);
+   }
+ 
+diff --git a/content/browser/picture_in_picture/picture_in_picture_service_impl.h b/content/browser/picture_in_picture/picture_in_picture_service_impl.h
+index e84aacc209..70b81cb968 100644
+--- a/content/browser/picture_in_picture/picture_in_picture_service_impl.h
++++ b/content/browser/picture_in_picture/picture_in_picture_service_impl.h
+@@ -51,6 +51,16 @@ class CONTENT_EXPORT PictureInPictureServiceImpl final
+       const gfx::Rect& source_bounds,
+       blink::mojom::ImmersiveOptionsPtr immersive_options,
+       StartSessionCallback) final;
++  void StartBrowserSession(
++      const std::string& request_token,
++      uint32_t player_id,
++      mojo::PendingAssociatedRemote<media::mojom::MediaPlayer> player_remote,
++      const viz::SurfaceId& surface_id,
++      const gfx::Size& natural_size,
++      bool show_play_pause_button,
++      mojo::PendingRemote<blink::mojom::PictureInPictureSessionObserver>,
++      const gfx::Rect& source_bounds,
++      StartBrowserSessionCallback) final;
+   void RequestImmersivePlaybackConfirmation(
+       RequestImmersivePlaybackConfirmationCallback) final;
+ 
+@@ -62,6 +72,17 @@ class CONTENT_EXPORT PictureInPictureServiceImpl final
+       mojo::PendingReceiver<blink::mojom::PictureInPictureService>);
+   ~PictureInPictureServiceImpl() override;
+ 
++  void StartSessionInternal(
++      const std::string& request_token,
++      uint32_t player_id,
++      mojo::PendingAssociatedRemote<media::mojom::MediaPlayer> player_remote,
++      const viz::SurfaceId& surface_id,
++      const gfx::Size& natural_size,
++      bool show_play_pause_button,
++      mojo::PendingRemote<blink::mojom::PictureInPictureSessionObserver>,
++      const gfx::Rect& source_bounds,
++      blink::mojom::ImmersiveOptionsPtr immersive_options,
++      StartSessionCallback callback);
+   VideoPictureInPictureWindowControllerImpl& GetController();
+ };
+ 
+diff --git a/content/public/browser/media_session.h b/content/public/browser/media_session.h
+index d0d5f8afe5..80730e1974 100644
+--- a/content/public/browser/media_session.h
++++ b/content/public/browser/media_session.h
+@@ -167,6 +167,10 @@ class MediaSession : public media_session::mojom::MediaSession {
+   // Enter picture-in-picture.
+   void EnterPictureInPicture() override = 0;
+ 
++  // Explicit embedder request with document-bound admission at StartSession.
++  virtual bool CanEnterBrowserPictureInPicture() const;
++  virtual bool RequestBrowserPictureInPicture(const std::string& token);
++
+   // Exit picture-in-picture.
+   void ExitPictureInPicture() override = 0;
+ 
+diff --git a/content/public/browser/web_contents_delegate.cc b/content/public/browser/web_contents_delegate.cc
+index f2baf5dfd1..63a03da790 100644
+--- a/content/public/browser/web_contents_delegate.cc
++++ b/content/public/browser/web_contents_delegate.cc
+@@ -35,6 +35,11 @@ namespace content {
+ 
+ WebContentsDelegate::WebContentsDelegate() = default;
+ 
++bool WebContentsDelegate::CanStartBrowserPictureInPicture(
++    RenderFrameHost* frame, const std::string& token) {
++  return token.empty();
++}
++
+ void WebContentsDelegate::WebContentsCreatedWithFullParams(
+     WebContents* source_contents,
+     int opener_render_process_id,
+diff --git a/content/public/browser/web_contents_delegate.h b/content/public/browser/web_contents_delegate.h
+index 0a1f1b4701..6e71be43c8 100644
+--- a/content/public/browser/web_contents_delegate.h
++++ b/content/public/browser/web_contents_delegate.h
+@@ -802,6 +802,14 @@ class CONTENT_EXPORT WebContentsDelegate {
+   virtual PictureInPictureResult EnterPictureInPicture(
+       WebContents* web_contents);
+ 
++  // Empty tokens are normal website requests; embedders deny tagged requests
++  // by default. The frame is the document-associated PiP service's owner.
++  virtual bool CanStartBrowserPictureInPicture(RenderFrameHost* frame,
++                                               const std::string& token);
++  virtual void DidStartBrowserPictureInPicture(RenderFrameHost* frame,
++                                               const std::string& token,
++                                               bool success) {}
++
+   // Returns the bounds of the window that this `WebContents` is contained
+   // within, if it exists, `std::nullopt` otherwise.
+   //
+diff --git a/media/mojo/mojom/media_player.mojom b/media/mojo/mojom/media_player.mojom
+index 303d465429..5564d405d2 100644
+--- a/media/mojo/mojom/media_player.mojom
++++ b/media/mojo/mojom/media_player.mojom
+@@ -30,6 +30,9 @@ interface MediaPlayer {
+   // Requests the media player to enter the Picture-in-Picture mode.
+   RequestEnterPictureInPicture();
+ 
++  // Main-process initiated entry. Echo this opaque token to PiP admission.
++  RequestEnterBrowserPictureInPicture(string request_token);
++
+   // Requests the media player to mute or unmute.
+   RequestMute(bool mute);
+ 
+diff --git a/third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom b/third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom
+index 500d4b9883..d74ae15288 100644
+--- a/third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom
++++ b/third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom
+@@ -126,6 +126,19 @@ interface PictureInPictureService {
+           => (pending_remote<PictureInPictureSession>? session,
+               gfx.mojom.Size size);
+ 
++  // Token is supplied by the embedder, never by a page API.
++  StartBrowserSession(
++      string request_token,
++      uint32 player_id,
++      pending_associated_remote<media.mojom.MediaPlayer> player_remote,
++      viz.mojom.SurfaceId surface_id,
++      gfx.mojom.Size natural_size,
++      bool show_play_pause_button,
++      pending_remote<PictureInPictureSessionObserver> observer,
++      gfx.mojom.Rect source_bounds)
++          => (pending_remote<PictureInPictureSession>? session,
++              gfx.mojom.Size size);
++
+   // Requests user confirmation to enter an immersive Picture-in-Picture session
+   // on Android XR.
+   // TODO(crbug.com/500441418): Move RequestImmersivePlaybackConfirmation and
+diff --git a/third_party/blink/renderer/core/frame/picture_in_picture_controller.h b/third_party/blink/renderer/core/frame/picture_in_picture_controller.h
+index 14c20d8160..7d3f15aa8e 100644
+--- a/third_party/blink/renderer/core/frame/picture_in_picture_controller.h
++++ b/third_party/blink/renderer/core/frame/picture_in_picture_controller.h
+@@ -80,6 +80,9 @@ class CORE_EXPORT PictureInPictureController
+       HTMLVideoElement*,
+       ScriptPromiseResolver<PictureInPictureWindow>*) = 0;
+ 
++  // Browser-owned entry must carry its token back to the browser for admission.
++  virtual void EnterBrowserPictureInPicture(HTMLVideoElement*, const String&) {}
++
+   // Requests confirmation to start an immersive Picture-in-Picture session
+   // for the given video element.
+   virtual void RequestImmersivePlaybackConfirmation(
+diff --git a/third_party/blink/renderer/core/html/media/html_media_element.h b/third_party/blink/renderer/core/html/media/html_media_element.h
+index 91eb3fbf72..4d4ee0dbba 100644
+--- a/third_party/blink/renderer/core/html/media/html_media_element.h
++++ b/third_party/blink/renderer/core/html/media/html_media_element.h
+@@ -655,6 +655,7 @@ class CORE_EXPORT HTMLMediaElement
+   void RequestSeekBackward(base::TimeDelta seek_time) override;
+   void RequestSeekTo(base::TimeDelta seek_time) override;
+   void RequestEnterPictureInPicture() override {}
++  void RequestEnterBrowserPictureInPicture(const String& token) override {}
+   void RequestMute(bool mute) override;
+   void SetVolumeMultiplier(double multiplier) override;
+   void SetPersistentState(bool persistent) override {}
+diff --git a/third_party/blink/renderer/core/html/media/html_video_element.cc b/third_party/blink/renderer/core/html/media/html_video_element.cc
+index 868d74c35b..0489906e4b 100644
+--- a/third_party/blink/renderer/core/html/media/html_video_element.cc
++++ b/third_party/blink/renderer/core/html/media/html_video_element.cc
+@@ -615,6 +615,14 @@ void HTMLVideoElement::RequestEnterPictureInPicture() {
+       .EnterPictureInPicture(this, /*promise=*/nullptr);
+ }
+ 
++void HTMLVideoElement::RequestEnterBrowserPictureInPicture(const String& token) {
++  auto& controller = PictureInPictureController::From(GetDocument());
++  if (token.empty() || paused() ||
++      controller.IsElementAllowed(*this) != PictureInPictureController::Status::kEnabled)
++    return;
++  controller.EnterBrowserPictureInPicture(this, token);
++}
++
+ void HTMLVideoElement::RequestMediaRemoting() {
+   GetWebMediaPlayer()->RequestMediaRemoting();
+ }
+diff --git a/third_party/blink/renderer/core/html/media/html_video_element.h b/third_party/blink/renderer/core/html/media/html_video_element.h
+index 2462c6b177..4ed3495de8 100644
+--- a/third_party/blink/renderer/core/html/media/html_video_element.h
++++ b/third_party/blink/renderer/core/html/media/html_video_element.h
+@@ -229,6 +229,7 @@ class CORE_EXPORT HTMLVideoElement final
+   // Video-specific overrides for part of the media::mojom::MediaPlayer
+   // interface, fully implemented in the parent class HTMLMediaElement.
+   void RequestEnterPictureInPicture() final;
++  void RequestEnterBrowserPictureInPicture(const String& token) final;
+   void RequestMediaRemoting() final;
+   void RequestVisibility(RequestVisibilityCallback request_visibility_cb) final;
+ 
+diff --git a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
+index ef6d851fa9..21e32c9d2c 100644
+--- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
++++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
+@@ -142,10 +142,21 @@ void PictureInPictureControllerImpl::EnterPictureInPicture(
+                                 resolver);
+ }
+ 
++void PictureInPictureControllerImpl::EnterBrowserPictureInPicture(
++    HTMLVideoElement* video_element, const String& token) {
++  if (token.empty() || picture_in_picture_element_ ||
++      video_element->paused() ||
++      IsElementAllowed(*video_element, false) != Status::kEnabled ||
++      video_element->GetDisplayType() == WebMediaPlayer::DisplayType::kFullscreen)
++    return;
++  EnterPictureInPictureInternal(video_element, nullptr, nullptr, token);
++}
++
+ void PictureInPictureControllerImpl::EnterPictureInPictureInternal(
+     HTMLVideoElement* video_element,
+     mojom::blink::ImmersiveOptionsPtr immersive_options,
+-    ScriptPromiseResolver<PictureInPictureWindow>* resolver) {
++    ScriptPromiseResolver<PictureInPictureWindow>* resolver,
++    const String& browser_token) {
+   if (!video_element->GetWebMediaPlayer()) {
+     if (resolver) {
+       // TODO(crbug.com/1293949): Add an error message.
+@@ -200,6 +211,19 @@ void PictureInPictureControllerImpl::EnterPictureInPictureInternal(
+ 
+   // Determines whether the current Picture-in-Picture session is immersive.
+   bool is_immersive = !immersive_options.is_null();
++  if (!browser_token.empty()) {
++    picture_in_picture_service_->StartBrowserSession(
++        browser_token, video_element->GetWebMediaPlayer()->GetPlayerId(),
++        std::move(media_player_remote),
++        video_element->GetWebMediaPlayer()->GetSurfaceId().value(),
++        video_element->GetWebMediaPlayer()->NaturalSize(),
++        ShouldShowPlayPauseButton(*video_element), std::move(session_observer),
++        video_bounds,
++        BindOnce(&PictureInPictureControllerImpl::OnEnteredPictureInPicture,
++                 WrapPersistent(this), WrapPersistent(video_element),
++                 false, WrapPersistent(resolver)));
++    return;
++  }
+   picture_in_picture_service_->StartSession(
+       video_element->GetWebMediaPlayer()->GetPlayerId(),
+       std::move(media_player_remote),
+diff --git a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h
+index 0f7436b791..813531aa13 100644
+--- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h
++++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h
+@@ -71,6 +71,7 @@ class MODULES_EXPORT PictureInPictureControllerImpl
+   void EnterPictureInPicture(
+       HTMLVideoElement*,
+       ScriptPromiseResolver<PictureInPictureWindow>*) override;
++  void EnterBrowserPictureInPicture(HTMLVideoElement*, const String&) override;
+   void ExitPictureInPicture(HTMLVideoElement*,
+                             ScriptPromiseResolver<IDLUndefined>*) override;
+   void RequestImmersivePlaybackConfirmation(
+@@ -107,7 +108,8 @@ class MODULES_EXPORT PictureInPictureControllerImpl
+   void EnterPictureInPictureInternal(
+       HTMLVideoElement*,
+       mojom::blink::ImmersiveOptionsPtr options,
+-      ScriptPromiseResolver<PictureInPictureWindow>*);
++      ScriptPromiseResolver<PictureInPictureWindow>*,
++      const String& browser_token = String());
+   void OnEnteredPictureInPicture(
+       HTMLVideoElement*,
+       bool is_immersive,
+diff --git a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc
+index 0064e2f31b..aab7b6e166 100644
+--- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc
++++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc
+@@ -185,6 +185,14 @@ class MockPictureInPictureService
+        mojom::blink::ImmersiveOptionsPtr,
+        StartSessionCallback));
+ 
++  MOCK_METHOD(
++      void, StartBrowserSession,
++      (const String&, uint32_t,
++       mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>,
++       const viz::SurfaceId&, const gfx::Size&, bool,
++       mojo::PendingRemote<mojom::blink::PictureInPictureSessionObserver>,
++       const gfx::Rect&, StartBrowserSessionCallback));
++
+   MOCK_METHOD(void,
+               RequestImmersivePlaybackConfirmation,
+               (RequestImmersivePlaybackConfirmationCallback));
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_context.h b/third_party/blink/renderer/modules/webaudio/audio_context.h
+index d36e7a82a3..9f99c04d7a 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_context.h
++++ b/third_party/blink/renderer/modules/webaudio/audio_context.h
+@@ -171,6 +171,7 @@ class MODULES_EXPORT AudioContext final
+   void RequestSeekBackward(base::TimeDelta seek_time) override {}
+   void RequestSeekTo(base::TimeDelta seek_time) override {}
+   void RequestEnterPictureInPicture() override {}
++  void RequestEnterBrowserPictureInPicture(const String&) override {}
+   void RequestMute(bool mute) override {}
+   void SetVolumeMultiplier(double multiplier) override;
+   void SetPersistentState(bool persistent) override {}

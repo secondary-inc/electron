@@ -329,6 +329,14 @@ class WebContents final : public ExclusiveAccessContext,
   void CopyImageAt(int x, int y);
 
   // Focus.
+  void SetBrowserTabState(gin_helper::ErrorThrower thrower, bool active,
+                          int window_id, int index, std::optional<bool> pinned, std::optional<bool> moved, std::optional<int> opener_tab_id);
+  void SetBrowserLinkPreviewOrigin(gin_helper::ErrorThrower thrower,
+                                   const std::string& origin);
+  v8::Local<v8::Promise> GetBrowserTextFragment(v8::Isolate* isolate);
+  bool RequestBrowserPictureInPicture(const std::string& url,
+      const std::string& token, base::RepeatingCallback<bool()> valid);
+  void CancelBrowserPictureInPicture(const std::string& token);
   void Focus();
   bool IsFocused() const;
 
@@ -826,6 +834,10 @@ class WebContents final : public ExclusiveAccessContext,
   content::PictureInPictureResult EnterPictureInPicture(
       content::WebContents* web_contents) override;
   void ExitPictureInPicture() override;
+  bool CanStartBrowserPictureInPicture(content::RenderFrameHost* frame,
+      const std::string& token) override;
+  void DidStartBrowserPictureInPicture(content::RenderFrameHost* frame,
+      const std::string& token, bool success) override;
   bool ShouldFocusPageAfterCrash(content::WebContents* source) override;
 
   // InspectableWebContentsDelegate:
@@ -1021,6 +1033,10 @@ class WebContents final : public ExclusiveAccessContext,
 
   // Declared after |inspectable_web_contents_| because it observes its views.
   std::unique_ptr<DraggableRegionDebugger> draggable_region_debugger_;
+
+  struct BrowserPipRequest;
+  std::unique_ptr<BrowserPipRequest> browser_pip_request_;
+  std::string browser_pip_active_token_;
 
   base::WeakPtrFactory<WebContents> weak_factory_{this};
 };

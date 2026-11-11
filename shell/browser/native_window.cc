@@ -592,6 +592,7 @@ void NativeWindow::NotifyWindowBlur() {
 }
 
 void NativeWindow::NotifyWindowFocus() {
+  WindowList::WindowFocused(this);
   observers_.Notify(&NativeWindowObserver::OnWindowFocus);
 }
 

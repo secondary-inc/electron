@@ -11,7 +11,8 @@ ElectronExtensionWebContentsObserver::ElectronExtensionWebContentsObserver(
     content::WebContents* web_contents)
     : ExtensionWebContentsObserver(web_contents),
       content::WebContentsUserData<ElectronExtensionWebContentsObserver>(
-          *web_contents) {}
+          *web_contents),
+      declarative_net_request_helper_(web_contents) {}
 
 ElectronExtensionWebContentsObserver::~ElectronExtensionWebContentsObserver() =
     default;

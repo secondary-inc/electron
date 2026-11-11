@@ -24,12 +24,21 @@
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/browser/extension_file_task_runner.h"
+#include "extensions/browser/api/declarative_net_request/install_index_helper.h"
 #include "extensions/browser/extension_pref_names.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/state_store.h"
+#include "extensions/browser/scripting_utils.h"
+#include "extensions/browser/scripting_constants.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/service_worker/service_worker_task_queue.h"
+#include "extensions/browser/permissions/permissions_updater.h"
+#include "extensions/browser/permissions_manager.h"
+#include "extensions/browser/extension_util.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/file_util.h"
@@ -42,7 +51,7 @@ namespace extensions {
 
 namespace {
 
-std::pair<scoped_refptr<const Extension>, std::string> LoadUnpacked(
+ElectronExtensionLoadResult LoadUnpacked(
     const base::FilePath& extension_dir,
     int load_flags) {
   // app_shell only supports unpacked extensions.
@@ -51,7 +60,7 @@ std::pair<scoped_refptr<const Extension>, std::string> LoadUnpacked(
   if (!base::DirectoryExists(extension_dir)) {
     std::string err = "Extension directory not found: " +
                       base::UTF16ToUTF8(extension_dir.LossyDisplayName());
-    return std::make_pair(nullptr, err);
+    return {nullptr, std::move(err), {}};
   }
 
   // remove _metadata folder. Otherwise, the following warning will be thrown
@@ -71,8 +80,15 @@ std::pair<scoped_refptr<const Extension>, std::string> LoadUnpacked(
     std::string err = "Loading extension at " +
                       base::UTF16ToUTF8(extension_dir.LossyDisplayName()) +
                       " failed with: " + base::UTF16ToUTF8(load_error);
-    return std::make_pair(nullptr, err);
+    return {nullptr, std::move(err), {}};
   }
+
+  // Match Chromium unpacked installation: index before enabling the extension.
+  // This runs on the extension file task runner, never the UI thread.
+  auto indexed = declarative_net_request::InstallIndexHelper::
+      IndexAndPersistRulesOnInstall(*extension);
+  if (!indexed.has_value())
+    return {nullptr, indexed.error(), {}};
 
   std::string warnings;
   // Log warnings.
@@ -99,7 +115,7 @@ std::pair<scoped_refptr<const Extension>, std::string> LoadUnpacked(
     }
   }
 
-  return std::make_pair(extension, warnings);
+  return {extension, std::move(warnings), std::move(indexed).value()};
 }
 
 }  // namespace
@@ -150,11 +166,11 @@ void ElectronExtensionLoader::UnloadExtension(
 
 void ElectronExtensionLoader::FinishExtensionLoad(
     base::OnceCallback<void(const Extension*, const std::string&)> cb,
-    std::pair<scoped_refptr<const Extension>, std::string> result) {
-  scoped_refptr<const Extension> extension = result.first;
+    ElectronExtensionLoadResult result) {
+  scoped_refptr<const Extension> extension = result.extension;
   base::OnceClosure add_extension = base::BindOnce(
       &ElectronExtensionLoader::AddLoadedExtension, weak_factory_.GetWeakPtr(),
-      std::move(cb), extension, result.second);
+      std::move(cb), std::move(result));
 
   // A worker registered by a previous launch keeps running the script it was
   // registered with, and the extension's files can change between launches
@@ -180,10 +196,27 @@ void ElectronExtensionLoader::FinishExtensionLoad(
 
 void ElectronExtensionLoader::AddLoadedExtension(
     base::OnceCallback<void(const Extension*, const std::string&)> cb,
-    scoped_refptr<const Extension> extension,
-    const std::string& error_or_warnings) {
+    ElectronExtensionLoadResult result) {
+  scoped_refptr<const Extension> extension = result.extension;
   if (extension) {
     ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(browser_context_);
+    std::string scripts_version;
+    extension_prefs->ReadPrefAsString(extension->id(), "iris_scripts_version",
+                                      &scripts_version);
+    if (scripts_version != extension->version().GetString()) {
+      // Registrations refer to code in a specific reviewed version. Never
+      // revive old script registrations against a replacement package.
+      scripting::ClearPersistentScriptURLPatterns(browser_context_, extension->id());
+      ExtensionSystem::Get(browser_context_)->dynamic_user_scripts_store()
+          ->RemoveExtensionValue(extension->id(), scripting::kRegisteredScriptsStorageKey);
+      extension_prefs->UpdateExtensionPref(extension->id(), "iris_scripts_version",
+                                           base::Value(extension->version().GetString()));
+    }
+    // Keep runtime permission checks in sync with the embedder's explicit load
+    // option. Every load defaults back to denied unless the caller opts in.
+    extension_prefs->SetAllowFileAccess(
+        extension->id(),
+        (extension->creation_flags() & Extension::ALLOW_FILE_ACCESS) != 0);
 
     if (BackgroundInfo::IsServiceWorkerBased(extension.get())) {
       // Tell Chromium that it needs to start the extension's service worker.
@@ -196,6 +229,9 @@ void ElectronExtensionLoader::AddLoadedExtension(
           base::Value(false));
     }
 
+    ExtensionPrefs::Get(browser_context_)->UpdateExtensionPref(
+        extension->id(), ExtensionPrefs::kDNRStaticRulesetPref,
+        base::Value(std::move(result.ruleset_install_prefs)));
     extension_registrar_->AddExtension(extension);
 
     // Write extension install time to ExtensionPrefs.
@@ -216,20 +252,35 @@ void ElectronExtensionLoader::AddLoadedExtension(
     }
   }
 
-  std::move(cb).Run(extension.get(), error_or_warnings);
+  std::move(cb).Run(extension.get(), result.message);
 }
 
 void ElectronExtensionLoader::FinishExtensionReload(
     const ExtensionId& old_extension_id,
-    std::pair<scoped_refptr<const Extension>, std::string> result) {
-  scoped_refptr<const Extension> extension = result.first;
+    ElectronExtensionLoadResult result) {
+  scoped_refptr<const Extension> extension = result.extension;
   if (extension) {
+    ExtensionPrefs::Get(browser_context_)->UpdateExtensionPref(
+        extension->id(), ExtensionPrefs::kDNRStaticRulesetPref,
+        base::Value(std::move(result.ruleset_install_prefs)));
     extension_registrar_->AddExtension(extension);
   }
 }
 
 void ElectronExtensionLoader::PreAddExtension(const Extension* extension,
                                               const Extension* old_extension) {
+  // Electron has no ExtensionManagementClient. The normal initializer
+  // dereferences that Chrome policy client. Restore bounded desired permissions
+  // here, then use the core transient initializer for host withholding.
+  auto desired = PermissionsManager::Get(browser_context_)
+                     ->GetBoundedExtensionDesiredPermissions(*extension);
+  ExtensionPrefs::Get(browser_context_)
+      ->SetDesiredActivePermissions(extension->id(), *desired);
+  extension->permissions_data()->SetContextId(util::GetBrowserContextId(browser_context_));
+  extension->permissions_data()->SetPermissions(
+      std::move(desired), std::make_unique<PermissionSet>());
+  PermissionsUpdater(browser_context_, PermissionsUpdater::InitFlag::kTransient)
+      .InitializePermissions(extension);
   if (old_extension)
     return;
 

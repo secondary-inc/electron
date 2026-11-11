@@ -14,6 +14,10 @@
 #include "shell/browser/extensions/api/extension_action/extension_action_api.h"
 #include "shell/browser/extensions/api/generated_api_registration.h"
 #include "shell/browser/extensions/api/tabs/tabs_api.h"
+#include "shell/browser/extensions/api/history/history_api.h"
+#include "shell/browser/extensions/api/bookmarks/bookmarks_api.h"
+#include "shell/browser/extensions/api/sessions/sessions_api.h"
+#include "shell/browser/extensions/api/webstore_private/webstore_private_api.h"
 
 namespace extensions {
 
@@ -85,6 +89,10 @@ void ElectronExtensionsBrowserAPIProvider::RegisterExtensionFunctions(
   // This provider is added after CoreExtensionsBrowserAPIProvider, so this
   // replaces the core registrations.
   OverrideUnsupportedFunctions(registry);
+  RegisterStorePageFunctions(registry);
+  RegisterElectronHistoryFunctions(registry);
+  RegisterElectronBookmarksFunctions(registry);
+  RegisterElectronSessionsFunctions(registry);
 }
 
 }  // namespace extensions

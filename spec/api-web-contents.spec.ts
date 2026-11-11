@@ -2391,6 +2391,23 @@ describe('webContents module', () => {
       await w.webContents.removeInsertedCSS(authorKey);
       expect(await w.webContents.executeJavaScript(getStyle)).toEqual(['repeat', 'scroll']);
     });
+    for (const cssOrigin of ['author', 'user'] as const) {
+      it(`supports removing ${cssOrigin}-origin inserted CSS`, async () => {
+        const w = new BrowserWindow({ show: false });
+        await w.loadURL('about:blank');
+        const otherKey = await w.webContents.insertCSS('body { color: rgb(12, 34, 56) !important; }', {
+          cssOrigin: cssOrigin === 'author' ? 'user' : 'author'
+        });
+        const key = await w.webContents.insertCSS('body { background-repeat: round !important; }', { cssOrigin });
+        expect(await w.webContents.executeJavaScript('getComputedStyle(document.body).backgroundRepeat')).toBe('round');
+        await w.webContents.removeInsertedCSS(key);
+        await w.webContents.removeInsertedCSS(key);
+        expect(await w.webContents.executeJavaScript('getComputedStyle(document.body).backgroundRepeat')).toBe('repeat');
+        expect(await w.webContents.executeJavaScript('getComputedStyle(document.body).color')).toBe('rgb(12, 34, 56)');
+        await w.webContents.removeInsertedCSS(otherKey);
+        expect(await w.webContents.executeJavaScript('getComputedStyle(document.body).color')).toBe('rgb(0, 0, 0)');
+      });
+    }
   });
 
   describe('inspectElement()', () => {

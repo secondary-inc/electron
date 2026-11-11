@@ -1,6 +1,7 @@
 import { ipcMainInternal } from '@electron/internal/browser/ipc-main-internal';
 import { IPC_MESSAGES } from '@electron/internal/common/ipc-messages';
 
+
 ipcMainInternal.handle(IPC_MESSAGES.BROWSER_GET_PROCESS_MEMORY_INFO, function (event) {
   if (event.type !== 'frame') return;
   // Report the calling frame's own renderer process, which for an

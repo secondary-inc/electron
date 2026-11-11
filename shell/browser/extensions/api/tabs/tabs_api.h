@@ -48,6 +48,17 @@ class TabsExecuteScriptFunction : public ExecuteCodeInTabFunction {
   DECLARE_EXTENSION_FUNCTION("tabs.executeScript", TABS_EXECUTESCRIPT)
 };
 
+class TabsGoBackFunction : public ExtensionFunction {
+  ~TabsGoBackFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.goBack", TABS_GOBACK)
+};
+class TabsGoForwardFunction : public ExtensionFunction {
+  ~TabsGoForwardFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.goForward", TABS_GOFORWARD)
+};
+
 class TabsReloadFunction : public ExtensionFunction {
   ~TabsReloadFunction() override = default;
 
@@ -123,6 +134,36 @@ class TabsUpdateFunction : public ExtensionFunction {
   ResponseAction Run() override;
 
   DECLARE_EXTENSION_FUNCTION("tabs.update", TABS_UPDATE)
+};
+class TabsMoveFunction : public ExtensionFunction {
+ private:
+  ~TabsMoveFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.move", TABS_MOVE)
+};
+class TabsRemoveFunction : public ExtensionFunction {
+ private:
+  ~TabsRemoveFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.remove", TABS_REMOVE)
+};
+class TabsDuplicateFunction : public TabsUpdateFunction {
+ private:
+  ~TabsDuplicateFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.duplicate", TABS_DUPLICATE)
+};
+class TabsGetCurrentFunction : public TabsUpdateFunction {
+ private:
+  ~TabsGetCurrentFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.getCurrent", TABS_GETCURRENT)
+};
+class TabsCreateFunction : public TabsUpdateFunction {
+ private:
+  ~TabsCreateFunction() override = default;
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("tabs.create", TABS_CREATE)
 };
 }  // namespace extensions
 

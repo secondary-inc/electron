@@ -123,6 +123,12 @@ class Session final : public gin::Wrappable<Session>,
   v8::Local<v8::Promise> SetProxy(gin::Arguments* args);
   v8::Local<v8::Promise> ForceReloadProxyConfig();
   void SetDownloadPath(const base::FilePath& path);
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  void SetNativeMessagingHosts(const base::ListValue& entries, gin::Arguments* args);
+  bool NativeMessageReady(const std::string& id);
+  bool NativeMessageReply(const std::string& id, const std::string& message);
+  bool NativeMessageClose(const std::string& id, const std::string& error);
+#endif
   void EnableNetworkEmulation(const gin_helper::Dictionary& options);
   void DisableNetworkEmulation();
   void SetCertVerifyProc(v8::Local<v8::Value> proc, gin::Arguments* args);

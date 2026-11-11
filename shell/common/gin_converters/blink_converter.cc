@@ -413,6 +413,7 @@ v8::Local<v8::Value> Converter<blink::WebMouseEvent>::ToV8(
   auto dict = gin_helper::Dictionary::CreateEmpty(isolate);
 
   dict.Set("type", in.GetType());
+  dict.Set("modifiers", ModifiersToArray(in.GetModifiers()));
   dict.Set("clickCount", in.ClickCount());
   dict.Set("movementX", in.movement_x);
   dict.Set("movementY", in.movement_y);

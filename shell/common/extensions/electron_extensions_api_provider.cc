@@ -35,7 +35,15 @@ constexpr APIPermissionInfo::InitInfo permissions_to_register[] = {
 #if BUILDFLAG(ENABLE_PDF_VIEWER)
     {mojom::APIPermissionID::kPdfViewerPrivate, "pdfViewerPrivate"},
 #endif
+    {mojom::APIPermissionID::kWebNavigation, "webNavigation",
+     APIPermissionInfo::kFlagRequiresManagementUIWarning},
+    {mojom::APIPermissionID::kHistory, "history", APIPermissionInfo::kFlagRequiresManagementUIWarning},
+    {mojom::APIPermissionID::kSessions, "sessions"},
+    {mojom::APIPermissionID::kBookmark, "bookmarks", APIPermissionInfo::kFlagRequiresManagementUIWarning},
     {mojom::APIPermissionID::kManagement, "management"},
+    {mojom::APIPermissionID::kContextMenus, "contextMenus"},
+    {mojom::APIPermissionID::kFontSettings, "fontSettings",
+     APIPermissionInfo::kFlagRequiresManagementUIWarning},
     {mojom::APIPermissionID::kTab, "tabs",
      APIPermissionInfo::kFlagRequiresManagementUIWarning},
     {mojom::APIPermissionID::kScripting, "scripting",

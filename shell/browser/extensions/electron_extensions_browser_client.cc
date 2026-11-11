@@ -389,6 +389,17 @@ ElectronExtensionsBrowserClient::GetExtensionWebContentsObserver(
       web_contents);
 }
 
+void ElectronExtensionsBrowserClient::GetTabAndWindowIdForWebContents(
+    content::WebContents* contents, int* tab_id, int* window_id) {
+  *tab_id = -1;
+  *window_id = -1;
+  if (!contents || !extensions::IsElectronBrowserTab(contents)) return;
+  if (auto* tab = api::WebContents::From(contents)) {
+    *tab_id = tab->ID();
+    *window_id = extensions::ElectronBrowserTabWindowId(contents);
+  }
+}
+
 bool ElectronExtensionsBrowserClient::IsValidTabId(
     content::BrowserContext* browser_context,
     const int tab_id,

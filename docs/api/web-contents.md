@@ -2,6 +2,23 @@
 
 > Render and control web pages.
 
+### Iris managed link preview routing
+
+`contents.setBrowserLinkPreviewOrigin(origin)` is a main-process-only Iris
+extension for registered browser tabs. A canonical HTTP(S) origin opts an
+attached tab into forwarding trusted, current-tab, outermost-main-frame GET
+link clicks outside that origin before renderer beforeunload. An empty string
+disables forwarding. Forms, downloads, script navigation and other dispositions
+keep their ordinary paths.
+
+The cancellable `will-navigate-link` event receives `event, url, referrer`.
+The embedder must revalidate its current profile, parent and visible surface.
+Preventing the event suppresses navigation without authorizing source unload;
+the embedder may then open an independent preview. Unhandled events must retain
+normal navigation and beforeunload protection. This API is not exposed to
+website JavaScript.
+
+
 Process: [Main](../glossary.md#main-process)
 
 `webContents` is an [EventEmitter][event-emitter].
@@ -265,6 +282,14 @@ Returns:
 * `isMainFrame` boolean _Deprecated_
 * `frameProcessId` Integer _Deprecated_
 * `frameRoutingId` Integer _Deprecated_
+
+The Iris fork also supplies native navigation metadata on these navigation events:
+`hasUserGesture`, `initiatedByLinkClick`, `isFormSubmission`, and `isPost` are booleans from Chromium's
+NavigationHandle; `navigationType` is its core page-transition string; and
+`referrer` is a Referrer object containing the URL and policy. These fields let
+hosts distinguish user-initiated links from GET/POST forms without observing or
+modifying website JavaScript. A user gesture alone is not proof of a physical
+mouse click and is not an authorization boundary.
 
 Emitted when a user or the page wants to start navigation on the main frame. It can happen when
 the `window.location` object is changed or a user clicks a link in the page.

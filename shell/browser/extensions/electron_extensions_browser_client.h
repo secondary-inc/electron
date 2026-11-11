@@ -146,6 +146,8 @@ class ElectronExtensionsBrowserClient
       content::WebContents* web_contents) override;
   extensions::ExtensionWebContentsObserver* GetExtensionWebContentsObserver(
       content::WebContents* web_contents) override;
+  void GetTabAndWindowIdForWebContents(content::WebContents* contents,
+                                      int* tab_id, int* window_id) override;
   bool IsValidTabId(content::BrowserContext* browser_context,
                     int tab_id,
                     bool include_incognito,

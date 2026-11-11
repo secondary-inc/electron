@@ -7,9 +7,18 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "components/value_store/value_store_factory.h"
 #include "extensions/browser/api/storage/settings_namespace.h"
+#include "electron/buildflags/buildflags.h"
+#include "content/public/browser/browser_thread.h"
+#include "extensions/browser/api/storage/backend_task_runner.h"
+#include "extensions/browser/api/storage/settings_storage_quota_enforcer.h"
+#include "extensions/browser/api/storage/value_store_cache.h"
+#include "extensions/browser/api/storage/value_store_util.h"
+#include "extensions/common/api/storage.h"
+#include "extensions/common/extension.h"
 #include "extensions/browser/guest_view/extensions_guest_view_manager_delegate.h"
 #include "extensions/browser/guest_view/mime_handler_view/mime_handler_view_guest_delegate.h"
 #include "printing/buildflags/buildflags.h"
@@ -27,6 +36,8 @@
 #endif
 
 namespace extensions {
+
+
 
 class ElectronGuestViewManagerDelegate
     : public ExtensionsGuestViewManagerDelegate {

@@ -4,6 +4,7 @@
 
 #include "shell/browser/extensions/api/tabs/tabs_api.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -11,12 +12,19 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/functional/bind.h"
+#include "base/memory/ref_counted.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
+#include "extensions/browser/extension_registry.h"
+#include "shell/common/gin_converters/callback_converter.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/strings/pattern.h"
 #include "base/types/expected.h"
 #include "chrome/common/url_constants.h"
 #include "components/url_formatter/url_fixer.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/browser_context.h"
 #include "extensions/browser/extension_api_frame_id_map.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/common/error_utils.h"
@@ -229,6 +237,30 @@ bool TabsExecuteScriptFunction::ShouldRemoveCSS() const {
   return false;
 }
 
+ExtensionFunction::ResponseAction TabsGoBackFunction::Run() {
+  auto params = tabs::GoBack::Params::Create(args());
+  EXTENSION_FUNCTION_VALIDATE(params);
+  auto* tab = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                            : GetActiveElectronTab(browser_context());
+  if (!tab) return RespondNow(Error("No such tab"));
+  auto& controller = tab->web_contents()->GetController();
+  if (!controller.CanGoBack()) return RespondNow(Error("No previous page in tab history"));
+  controller.GoBack();
+  return RespondNow(NoArguments());
+}
+
+ExtensionFunction::ResponseAction TabsGoForwardFunction::Run() {
+  auto params = tabs::GoForward::Params::Create(args());
+  EXTENSION_FUNCTION_VALIDATE(params);
+  auto* tab = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                            : GetActiveElectronTab(browser_context());
+  if (!tab) return RespondNow(Error("No such tab"));
+  auto& controller = tab->web_contents()->GetController();
+  if (!controller.CanGoForward()) return RespondNow(Error("No next page in tab history"));
+  controller.GoForward();
+  return RespondNow(NoArguments());
+}
+
 ExtensionFunction::ResponseAction TabsReloadFunction::Run() {
   std::optional<tabs::Reload::Params> params =
       tabs::Reload::Params::Create(args());
@@ -239,8 +271,8 @@ ExtensionFunction::ResponseAction TabsReloadFunction::Run() {
     bypass_cache = *params->reload_properties->bypass_cache;
   }
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -284,7 +316,8 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
   auto* bc = browser_context();
   auto all_contents = electron::api::WebContents::GetWebContentsList();
   all_contents.remove_if([&bc](electron::api::WebContents* wc) {
-    return (bc != wc->web_contents()->GetBrowserContext());
+    return (bc != wc->web_contents()->GetBrowserContext()) ||
+           !IsElectronBrowserTab(wc->web_contents());
   });
 
   for (auto* contents : all_contents) {
@@ -292,6 +325,24 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
       continue;
 
     auto* wc = contents->web_contents();
+    const int managed_window_id = ElectronBrowserTabWindowId(wc);
+    if (managed_window_id >= 0) {
+      if (params->query_info.window_id && *params->query_info.window_id >= 0 &&
+          *params->query_info.window_id != managed_window_id)
+        continue;
+      if (params->query_info.index &&
+          *params->query_info.index != ElectronBrowserTabIndex(wc))
+        continue;
+    }
+
+    if (!MatchesBool(params->query_info.pinned, IsElectronBrowserTabPinned(wc)))
+      continue;
+    if (!MatchesBool(params->query_info.highlighted, IsElectronBrowserTabActive(contents)))
+      continue;
+    if (params->query_info.status != tabs::TabStatus::kNone &&
+        params->query_info.status != (wc->IsLoading() ? tabs::TabStatus::kLoading :
+                                                       tabs::TabStatus::kComplete))
+      continue;
 
     // Match webContents audible value.
     if (!MatchesBool(audible, wc->IsCurrentlyAudible()))
@@ -302,7 +353,7 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
       continue;
 
     // Match webContents active status.
-    if (!MatchesBool(params->query_info.active, contents->IsFocused()))
+    if (!MatchesBool(params->query_info.active, IsElectronBrowserTabActive(contents)))
       continue;
 
     const GURL& committed_url = wc->GetLastCommittedURL();
@@ -329,8 +380,21 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
     if (has_privileged_access) {
       tab.title = base::UTF16ToUTF8(wc->GetTitle());
       tab.url = committed_url.spec();
+      if (auto icon = ElectronBrowserTabFavicon(wc); !icon.empty()) tab.fav_icon_url = std::move(icon);
     }
-    tab.active = contents->IsFocused();
+    tab.active = IsElectronBrowserTabActive(contents);
+    tab.selected = tab.active;
+    tab.highlighted = tab.active;
+    tab.pinned = IsElectronBrowserTabPinned(wc);
+    if (const int opener = ElectronBrowserTabOpener(wc); opener >= 0) tab.opener_tab_id = opener;
+    tab.incognito = wc->GetBrowserContext()->IsOffTheRecord();
+    tab.group_id = -1;
+    tab.status = wc->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
+    tab.last_accessed = wc->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
+    if (const int window_id = ElectronBrowserTabWindowId(wc); window_id >= 0) {
+      tab.window_id = window_id;
+      tab.index = ElectronBrowserTabIndex(wc);
+    }
     tab.audible = contents->IsCurrentlyAudible();
     tab.muted_info = CreateMutedInfo(wc);
     // TODO: Add proper support for split views
@@ -359,9 +423,21 @@ ExtensionFunction::ResponseAction TabsGetFunction::Run() {
                                    wc->GetLastCommittedURL())) {
     tab.url = wc->GetLastCommittedURL().spec();
     tab.title = base::UTF16ToUTF8(wc->GetTitle());
+    if (auto icon = ElectronBrowserTabFavicon(wc); !icon.empty()) tab.fav_icon_url = std::move(icon);
   }
 
-  tab.active = contents->IsFocused();
+  tab.active = IsElectronBrowserTabActive(contents);
+  tab.selected = tab.active;
+  tab.highlighted = tab.active;
+  tab.pinned = IsElectronBrowserTabPinned(wc);
+    if (const int opener = ElectronBrowserTabOpener(wc); opener >= 0) tab.opener_tab_id = opener;
+  tab.incognito = wc->GetBrowserContext()->IsOffTheRecord();
+  tab.group_id = -1;
+  tab.status = wc->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
+  if (const int window_id = ElectronBrowserTabWindowId(wc); window_id >= 0) {
+    tab.window_id = window_id;
+    tab.index = ElectronBrowserTabIndex(wc);
+  }
   tab.last_accessed = wc->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
   // TODO: Add proper support for split views
   tab.split_view_id = -1;
@@ -374,8 +450,8 @@ ExtensionFunction::ResponseAction TabsSetZoomFunction::Run() {
       tabs::SetZoom::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -388,21 +464,21 @@ ExtensionFunction::ResponseAction TabsSetZoomFunction::Run() {
   auto* zoom_controller = contents->GetZoomController();
   double zoom_level = params->zoom_factor > 0
                           ? blink::ZoomFactorToZoomLevel(params->zoom_factor)
-                          : blink::ZoomFactorToZoomLevel(
-                                zoom_controller->default_zoom_factor());
+                          : zoom_controller->GetDefaultZoomLevel();
 
-  zoom_controller->SetZoomLevel(zoom_level);
+  if (!zoom_controller->SetZoomLevel(zoom_level))
+    return RespondNow(Error("Cannot zoom this tab in its current state"));
 
   return RespondNow(NoArguments());
 }
 
 ExtensionFunction::ResponseAction TabsGetZoomFunction::Run() {
-  std::optional<tabs::GetZoomSettings::Params> params =
-      tabs::GetZoomSettings::Params::Create(args());
+  std::optional<tabs::GetZoom::Params> params =
+      tabs::GetZoom::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -415,8 +491,8 @@ ExtensionFunction::ResponseAction TabsGetZoomSettingsFunction::Run() {
       tabs::GetZoomSettings::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -439,8 +515,8 @@ ExtensionFunction::ResponseAction TabsSetZoomSettingsFunction::Run() {
       tabs::SetZoomSettings::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
@@ -608,19 +684,270 @@ base::expected<GURL, std::string> PrepareURLForNavigation(
 
 }  // namespace
 
+ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().size() == 2 && args()[1].is_dict());
+  const auto& properties = args()[1].GetDict();
+  const auto index = properties.FindInt("index");
+  EXTENSION_FUNCTION_VALIDATE(index && *index >= -1);
+  const bool multiple = args()[0].is_list();
+  std::vector<int> ids;
+  if (args()[0].is_int()) ids.push_back(args()[0].GetInt());
+  else {
+    EXTENSION_FUNCTION_VALIDATE(multiple);
+    if (args()[0].GetList().size() > 100)
+      return RespondNow(Error("Move between one and 100 browser tabs"));
+    for (const auto& value : args()[0].GetList()) {
+      EXTENSION_FUNCTION_VALIDATE(value.is_int());
+      if (std::find(ids.begin(), ids.end(), value.GetInt()) != ids.end())
+        return RespondNow(Error("Duplicate browser tab in move"));
+      ids.push_back(value.GetInt());
+    }
+  }
+  if (ids.empty()) return RespondNow(Error("Move between one and 100 browser tabs"));
+  auto* selected = GetActiveElectronTab(browser_context());
+  if (!selected || ElectronBrowserTabWindowId(selected->web_contents()) < 0)
+    return RespondNow(Error("No selected browser tab in this profile"));
+  const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
+  if (const auto* value = properties.Find("windowId")) {
+    EXTENSION_FUNCTION_VALIDATE(value->is_int());
+    if (value->GetInt() != -2 && value->GetInt() != window_id)
+      return RespondNow(Error("Only the selected browser window is supported"));
+  }
+  for (int id : ids) {
+    auto* target = GetElectronTabById(id, browser_context());
+    if (!target || ElectronBrowserTabWindowId(target->web_contents()) != window_id ||
+        !target->owner_window() || target->owner_window()->base_window_id() != window_id)
+      return RespondNow(Error("No such browser tab in the selected profile window"));
+  }
+  auto indices = base::MakeRefCounted<base::RefCountedData<std::vector<int>>>();
+  auto reply = base::BindRepeating(
+      [](scoped_refptr<base::RefCountedData<std::vector<int>>> indices,
+         const std::vector<int>& values) { indices->data = values; }, indices);
+  if (!selected->Emit("browser-tabs-move", extension()->id(), ids, *index, reply) ||
+      indices->data.size() != ids.size())
+    return RespondNow(Error("The browser refused to move these tabs"));
+  base::ListValue result;
+  for (size_t position = 0; position < ids.size(); ++position) {
+    const int id = ids[position];
+    auto* target = GetElectronTabById(id, browser_context());
+    if (!target) return RespondNow(Error("The tab closed during move"));
+    auto* wc = target->web_contents();
+    tabs::Tab tab;
+    tab.id = id;
+    tab.window_id = window_id;
+    tab.index = indices->data[position];
+    tab.active = IsElectronBrowserTabActive(target);
+    tab.selected = tab.active;
+    tab.highlighted = tab.active;
+    tab.pinned = IsElectronBrowserTabPinned(wc);
+    if (const int opener = ElectronBrowserTabOpener(wc); opener >= 0) tab.opener_tab_id = opener;
+    tab.incognito = browser_context()->IsOffTheRecord();
+    tab.group_id = -1;
+    tab.split_view_id = -1;
+    tab.status = wc->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
+    tab.audible = target->IsCurrentlyAudible();
+    tab.muted_info = CreateMutedInfo(wc);
+    if (CanAccessPrivilegedTabFields(extension(), id, wc->GetLastCommittedURL())) {
+      tab.url = wc->GetLastCommittedURL().spec();
+      tab.title = base::UTF16ToUTF8(wc->GetTitle());
+      if (auto icon = ElectronBrowserTabFavicon(wc); !icon.empty()) tab.fav_icon_url = std::move(icon);
+    }
+    result.Append(tab.ToValue());
+  }
+  if (ids.size() == 1) return RespondNow(WithArguments(std::move(result[0])));
+  return RespondNow(WithArguments(std::move(result)));
+}
+
+ExtensionFunction::ResponseAction TabsRemoveFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().size() == 1);
+  std::vector<int> ids;
+  if (args()[0].is_int()) ids.push_back(args()[0].GetInt());
+  else {
+    EXTENSION_FUNCTION_VALIDATE(args()[0].is_list());
+    if (args()[0].GetList().size() > 100)
+      return RespondNow(Error("Remove between one and 100 browser tabs"));
+    for (const auto& value : args()[0].GetList()) {
+      EXTENSION_FUNCTION_VALIDATE(value.is_int());
+      if (std::find(ids.begin(), ids.end(), value.GetInt()) == ids.end())
+        ids.push_back(value.GetInt());
+    }
+  }
+  if (ids.empty() || ids.size() > 100)
+    return RespondNow(Error("Remove between one and 100 browser tabs"));
+  auto* selected = GetActiveElectronTab(browser_context());
+  if (!selected || ElectronBrowserTabWindowId(selected->web_contents()) < 0)
+    return RespondNow(Error("No selected browser tab in this profile"));
+  const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
+  for (int id : ids) {
+    auto* target = GetElectronTabById(id, browser_context());
+    if (!target || ElectronBrowserTabWindowId(target->web_contents()) != window_id ||
+        !target->owner_window() || target->owner_window()->base_window_id() != window_id)
+      return RespondNow(Error("No such browser tab in the selected profile window"));
+  }
+  using Pending = base::RefCountedData<base::OnceCallback<void(bool)>>;
+  auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
+      [](scoped_refptr<TabsRemoveFunction> function, std::vector<int> ids, bool closed) {
+        auto* context = function->browser_context();
+        if (closed && context) {
+          for (int id : ids) if (GetElectronTabById(id, context)) closed = false;
+        } else closed = false;
+        function->Respond(closed ? function->NoArguments()
+                                 : function->Error("The browser could not close all requested tabs"));
+      }, scoped_refptr<TabsRemoveFunction>(this), ids));
+  auto reply = base::BindRepeating([](scoped_refptr<Pending> pending, bool closed) {
+    if (pending->data) std::move(pending->data).Run(closed);
+  }, pending);
+  if (!selected->Emit("browser-tabs-remove", extension()->id(), ids, reply))
+    reply.Run(false);
+  if (pending->data)
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(reply, false), base::Seconds(15));
+  return did_respond() ? AlreadyResponded() : RespondLater();
+}
+
+ExtensionFunction::ResponseAction TabsDuplicateFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().size() == 1 && args()[0].is_int());
+  const int source_id = args()[0].GetInt();
+  auto* selected = GetActiveElectronTab(browser_context());
+  auto* source = GetElectronTabById(source_id, browser_context());
+  if (!selected || !source || !source->owner_window())
+    return RespondNow(Error("A selected managed tab and a source in this profile are required"));
+  const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
+  if (window_id < 0 || ElectronBrowserTabWindowId(source->web_contents()) != window_id ||
+      source->owner_window()->base_window_id() != window_id)
+    return RespondNow(Error("Only tabs in the selected browser window can be duplicated"));
+  using Pending = base::RefCountedData<base::OnceCallback<void(int)>>;
+  auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
+      [](scoped_refptr<TabsDuplicateFunction> function, int window_id, int id) {
+        auto* context = function->browser_context();
+        auto* created = context ? GetElectronTabById(id, context) : nullptr;
+        if (!context ||
+            ExtensionRegistry::Get(context)->enabled_extensions().GetByID(function->extension_id()) != function->extension() ||
+            !created || ElectronBrowserTabWindowId(created->web_contents()) != window_id ||
+            !created->owner_window() || created->owner_window()->base_window_id() != window_id) {
+          function->Respond(function->Error("The browser refused to duplicate this tab"));
+          return;
+        }
+        function->web_contents_ = created->web_contents();
+        function->Respond(function->GetResult());
+      }, scoped_refptr<TabsDuplicateFunction>(this), window_id));
+  auto reply = base::BindRepeating([](scoped_refptr<Pending> pending, int id) {
+    if (pending->data) std::move(pending->data).Run(id);
+  }, pending);
+  if (!selected->Emit("browser-tab-duplicate", extension()->id(), source_id, reply))
+    reply.Run(-1);
+  if (pending->data)
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(reply, -1), base::Seconds(15));
+  return did_respond() ? AlreadyResponded() : RespondLater();
+}
+
+ExtensionFunction::ResponseAction TabsGetCurrentFunction::Run() {
+  EXTENSION_FUNCTION_VALIDATE(args().empty());
+  auto* sender = GetSenderWebContents();
+  if (!sender || sender->GetBrowserContext() != browser_context() ||
+      !IsElectronBrowserTab(sender) || ElectronBrowserTabWindowId(sender) < 0)
+    return RespondNow(NoArguments());
+  auto* contents = electron::api::WebContents::From(sender);
+  if (!contents || !contents->owner_window() ||
+      contents->owner_window()->base_window_id() != ElectronBrowserTabWindowId(sender))
+    return RespondNow(NoArguments());
+  web_contents_ = sender;
+  return RespondNow(GetResult());
+}
+
+ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
+  auto params = tabs::Create::Params::Create(args());
+  EXTENSION_FUNCTION_VALIDATE(params);
+  const auto& properties = params->create_properties;
+  const GURL url(properties.url.value_or("about:blank"));
+  if (!url.is_valid() || url.spec().size() > 8192 ||
+      (!url.SchemeIsHTTPOrHTTPS() && url.spec() != "about:blank" &&
+       !(url.SchemeIs(extensions::kExtensionScheme) && url.host() == extension_id())) ||
+      url.has_username() || url.has_password() ||
+      (url.SchemeIs(extensions::kExtensionScheme) && url.has_port()))
+    return RespondNow(Error("Only web, blank and own-extension tabs are supported"));
+  auto* selected = GetActiveElectronTab(browser_context());
+  if (!selected || ElectronBrowserTabWindowId(selected->web_contents()) < 0)
+    return RespondNow(Error("No selected browser tab in this profile"));
+  const int window_id = ElectronBrowserTabWindowId(selected->web_contents());
+  if (properties.window_id && *properties.window_id != -2 && *properties.window_id != window_id)
+    return RespondNow(Error("Only the selected browser window is supported"));
+  const int opener_id = properties.opener_tab_id.value_or(-1);
+  if (properties.opener_tab_id) {
+    auto* opener = GetElectronTabById(opener_id, browser_context());
+    if (!opener || ElectronBrowserTabWindowId(opener->web_contents()) != window_id ||
+        !opener->owner_window() || opener->owner_window()->base_window_id() != window_id)
+      return RespondNow(Error("No opener tab in the selected browser window"));
+  }
+  // Closing an extension popup may require beforeunload. Keep one bounded
+  // response alive; only the main-process host can acknowledge a registered tab.
+  using Pending = base::RefCountedData<base::OnceCallback<void(int)>>;
+  auto pending = base::MakeRefCounted<Pending>(base::BindOnce(
+      [](scoped_refptr<TabsCreateFunction> function, int window_id, int id) {
+        auto* context = function->browser_context();
+        auto* created = context ? GetElectronTabById(id, context) : nullptr;
+        if (!context ||
+            ExtensionRegistry::Get(context)->enabled_extensions().GetByID(function->extension_id()) != function->extension() ||
+            !created || ElectronBrowserTabWindowId(created->web_contents()) != window_id ||
+            !created->owner_window() || created->owner_window()->base_window_id() != window_id) {
+          function->Respond(function->Error("The browser refused to create this tab"));
+          return;
+        }
+        function->web_contents_ = created->web_contents();
+        function->Respond(function->GetResult());
+      }, scoped_refptr<TabsCreateFunction>(this), window_id));
+  auto reply = base::BindRepeating([](scoped_refptr<Pending> pending, int id) {
+    if (pending->data) std::move(pending->data).Run(id);
+  }, pending);
+  if (!selected->Emit("browser-tab-create", extension()->id(), url.spec(),
+                 properties.active.value_or(properties.selected.value_or(true)), properties.pinned.value_or(false), properties.index.value_or(-1), reply, opener_id))
+    reply.Run(-1);
+  if (pending->data)
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(reply, -1), base::Seconds(15));
+  return did_respond() ? AlreadyResponded() : RespondLater();
+}
+
 TabsUpdateFunction::TabsUpdateFunction() : web_contents_(nullptr) {}
 
 ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
   std::optional<tabs::Update::Params> params =
       tabs::Update::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
+  if (params->update_properties.opener_tab_id)
+    return RespondNow(Error("Changing an existing tab opener is not supported"));
 
-  int tab_id = params->tab_id ? *params->tab_id : -1;
-  auto* contents = GetElectronTabById(tab_id, browser_context());
+  auto* contents = params->tab_id ? GetElectronTabById(*params->tab_id, browser_context())
+                                  : GetActiveElectronTab(browser_context());
   if (!contents)
     return RespondNow(Error("No such tab"));
 
+  const int tab_id = contents->ID();
   web_contents_ = contents->web_contents();
+
+  if (params->update_properties.active.value_or(false) &&
+      ElectronBrowserTabWindowId(web_contents_) >= 0 &&
+      !IsElectronBrowserTabActive(contents)) {
+    contents->Emit("browser-tab-activate");
+    contents = GetElectronTabById(tab_id, browser_context());
+    if (!contents)
+      return RespondNow(Error("The tab closed during activation"));
+    web_contents_ = contents->web_contents();
+    if (!IsElectronBrowserTabActive(contents))
+      return RespondNow(Error("The browser could not activate this tab"));
+  }
+
+  if (params->update_properties.pinned &&
+      *params->update_properties.pinned != IsElectronBrowserTabPinned(web_contents_)) {
+    contents->Emit("browser-tab-pin", *params->update_properties.pinned);
+    contents = GetElectronTabById(tab_id, browser_context());
+    if (!contents)
+      return RespondNow(Error("The tab closed while changing its pin"));
+    web_contents_ = contents->web_contents();
+    if (IsElectronBrowserTabPinned(web_contents_) != *params->update_properties.pinned)
+      return RespondNow(Error("The browser could not change this tab's pin"));
+  }
 
   // Navigate the tab to a new location if the url is different.
   std::string error;
@@ -645,6 +972,17 @@ bool TabsUpdateFunction::UpdateURL(const std::string& url_string,
   if (!url.has_value()) {
     *error = std::move(url.error());
     return false;
+  }
+
+  const GURL current = web_contents_->GetLastCommittedURL();
+  if (current.SchemeIs(extensions::kExtensionScheme) ||
+      url->SchemeIs(extensions::kExtensionScheme)) {
+    if (!current.SchemeIs(extensions::kExtensionScheme) ||
+        !url->SchemeIs(extensions::kExtensionScheme) ||
+        current.host() != extension_id() || url->host() != extension_id()) {
+      *error = "Extension page navigation must remain in its owning extension tab.";
+      return false;
+    }
   }
 
   content::NavigationController::LoadURLParams load_params(*url);
@@ -696,10 +1034,23 @@ ExtensionFunction::ResponseValue TabsUpdateFunction::GetResult() {
           web_contents_->GetLastCommittedURL())) {
     tab.url = web_contents_->GetLastCommittedURL().spec();
     tab.title = base::UTF16ToUTF8(web_contents_->GetTitle());
+    if (auto icon = ElectronBrowserTabFavicon(web_contents_); !icon.empty()) tab.fav_icon_url = std::move(icon);
   }
 
   if (api_web_contents)
-    tab.active = api_web_contents->IsFocused();
+    tab.active = IsElectronBrowserTabActive(api_web_contents);
+  if (const int window_id = ElectronBrowserTabWindowId(web_contents_); window_id >= 0) {
+    tab.window_id = window_id;
+    tab.index = ElectronBrowserTabIndex(web_contents_);
+  }
+  tab.selected = tab.active;
+  tab.highlighted = tab.active;
+  tab.pinned = IsElectronBrowserTabPinned(web_contents_);
+  if (const int opener = ElectronBrowserTabOpener(web_contents_); opener >= 0) tab.opener_tab_id = opener;
+  tab.incognito = web_contents_->GetBrowserContext()->IsOffTheRecord();
+  tab.group_id = -1;
+  tab.status = web_contents_->IsLoading() ? tabs::TabStatus::kLoading : tabs::TabStatus::kComplete;
+  tab.last_accessed = web_contents_->GetLastActiveTime().InMillisecondsFSinceUnixEpoch();
   tab.muted_info = CreateMutedInfo(web_contents_);
   tab.audible = web_contents_->IsCurrentlyAudible();
   // TODO: Add proper support for split views

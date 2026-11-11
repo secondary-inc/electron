@@ -8,7 +8,8 @@
 #include <string>
 #include <utility>
 
-#include "base/functional/callback_forward.h"
+#include "base/functional/callback.h"
+#include "base/values.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "extensions/browser/extension_registrar.h"
@@ -25,6 +26,12 @@ class BrowserContext;
 namespace extensions {
 
 class Extension;
+
+struct ElectronExtensionLoadResult {
+  scoped_refptr<const Extension> extension;
+  std::string message;
+  base::DictValue ruleset_install_prefs;
+};
 
 // Handles extension loading and reloading using ExtensionRegistrar.
 class ElectronExtensionLoader : public ExtensionRegistrar::Delegate {
@@ -67,15 +74,14 @@ class ElectronExtensionLoader : public ExtensionRegistrar::Delegate {
   // it. If the load failed, updates ShellKeepAliveRequester.
   void FinishExtensionReload(
       const ExtensionId& old_extension_id,
-      std::pair<scoped_refptr<const Extension>, std::string> result);
+      ElectronExtensionLoadResult result);
 
   void FinishExtensionLoad(
       base::OnceCallback<void(const Extension*, const std::string&)> cb,
-      std::pair<scoped_refptr<const Extension>, std::string> result);
+      ElectronExtensionLoadResult result);
   void AddLoadedExtension(
       base::OnceCallback<void(const Extension*, const std::string&)> cb,
-      scoped_refptr<const Extension> extension,
-      const std::string& error_or_warnings);
+      ElectronExtensionLoadResult result);
   void DoLoadExtensionForReload(const ExtensionId& extension_id,
                                 const base::FilePath& path);
 

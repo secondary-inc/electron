@@ -7,11 +7,36 @@
     "namespace": "extension",
     "description": "The <code>chrome.extension</code> API has utilities that can be used by any extension page. It includes support for exchanging messages between an extension and its content scripts or between extensions, as described in detail in <a href='messaging'>Message Passing</a>.",
     "compiler_options": {
-      "implemented_in": "chrome/browser/extensions/api/module/module.h"
+      "implemented_in": "electron/shell/browser/extensions/api/extension/extension_api.h"
     },
     "properties": {
+      "inIncognitoContext": {
+        "type": "boolean",
+        "optional": true,
+        "description": "Whether this extension context belongs to an incognito process."
+      }
     },
     "functions": [
+      {
+        "name": "isAllowedIncognitoAccess",
+        "type": "function",
+        "description": "Reports the calling extension's actual incognito permission; does not grant access.",
+        "parameters": [],
+        "returns_async": {
+          "name": "callback",
+          "parameters": [{"name": "isAllowedAccess", "type": "boolean"}]
+        }
+      },
+      {
+        "name": "isAllowedFileSchemeAccess",
+        "type": "function",
+        "description": "Reports the calling extension's actual file URL permission; does not grant access.",
+        "parameters": [],
+        "returns_async": {
+          "name": "callback",
+          "parameters": [{"name": "isAllowedAccess", "type": "boolean"}]
+        }
+      },
       {
         "name": "getBackgroundPage",
         "nocompile": true,

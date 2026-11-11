@@ -5,6 +5,7 @@
 #include "shell/browser/window_list.h"
 
 #include <algorithm>
+#include <map>
 
 #include "base/containers/to_vector.h"
 #include "base/memory/raw_ptr.h"
@@ -22,6 +23,20 @@ auto ConvertToWeakPtrVector(const std::vector<raw_ptr<T>>& raw_ptrs) {
 }  // namespace
 
 namespace electron {
+namespace {
+auto& FocusOrders() {
+  static base::NoDestructor<std::map<NativeWindow*, uint64_t>> orders;
+  return *orders;
+}
+}
+void WindowList::WindowFocused(NativeWindow* window) {
+  static uint64_t sequence = 0;
+  FocusOrders()[window] = ++sequence;
+}
+uint64_t WindowList::GetLastFocusOrder(NativeWindow* window) {
+  const auto found = FocusOrders().find(window);
+  return found == FocusOrders().end() ? 0 : found->second;
+}
 
 // static
 WindowList* WindowList::instance_ = nullptr;
@@ -56,6 +71,7 @@ void WindowList::AddWindow(NativeWindow* window) {
 void WindowList::RemoveWindow(NativeWindow* window) {
   auto& windows = GetInstance()->windows_;
   std::erase(windows, window);
+  FocusOrders().erase(window);
 
   if (windows.empty())
     GetObservers().Notify(&WindowListObserver::OnWindowAllClosed);

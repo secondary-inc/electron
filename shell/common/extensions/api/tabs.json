@@ -165,7 +165,37 @@
         "description": "The type of window."
       }
     ],
+    "properties": {
+      "TAB_ID_NONE": {"value": -1, "description": "An ID that represents the absence of a browser tab."}
+    },
     "functions": [
+      {
+        "name": "duplicate",
+        "type": "function",
+        "parameters": [{"name": "tabId", "type": "integer", "minimum": 0}],
+        "returns_async": {"name": "callback", "optional": true, "parameters": [{"name": "tab", "$ref": "Tab", "optional": true}]}
+      },
+      {
+        "name": "getCurrent",
+        "type": "function",
+        "description": "Gets the calling managed tab, or undefined for a non-tab extension context.",
+        "parameters": [],
+        "returns_async": {"name": "callback", "parameters": [{"name": "tab", "$ref": "Tab", "optional": true}]}
+      },
+      {
+        "name": "goBack",
+        "type": "function",
+        "description": "Goes back to the previous page in a tab.",
+        "parameters": [{"name": "tabId", "type": "integer", "minimum": 0, "optional": true}],
+        "returns_async": {"name": "callback", "optional": true, "parameters": []}
+      },
+      {
+        "name": "goForward",
+        "type": "function",
+        "description": "Goes forward to the next page in a tab.",
+        "parameters": [{"name": "tabId", "type": "integer", "minimum": 0, "optional": true}],
+        "returns_async": {"name": "callback", "optional": true, "parameters": []}
+      },
       {
         "name": "reload",
         "type": "function",
@@ -257,6 +287,38 @@
           "$ref": "runtime.Port",
           "description": "A port that can be used to communicate with the content scripts running in the specified tab. The port's $(ref:runtime.Port) event is fired if the tab closes or does not exist. "
         }
+      },
+      {
+        "name": "move",
+        "type": "function",
+        "parameters": [
+          {"name":"tabIds","choices":[{"type":"integer","minimum":0},{"type":"array","items":{"type":"integer","minimum":0}}]},
+          {"name":"moveProperties","type":"object","properties":{"windowId":{"type":"integer","minimum":-2,"optional":true},"index":{"type":"integer","minimum":-1}}}
+        ],
+        "returns_async":{"name":"callback","optional":true,"parameters":[{"name":"tabs","choices":[{"$ref":"Tab"},{"type":"array","items":{"$ref":"Tab"}}]}]}
+      },
+      {
+        "name": "remove",
+        "type": "function",
+        "parameters": [{"name":"tabIds","choices":[
+          {"type":"integer","minimum":0},
+          {"type":"array","items":{"type":"integer","minimum":0}}
+        ]}],
+        "returns_async":{"name":"callback","optional":true,"parameters":[]}
+      },
+      {
+        "name": "create",
+        "type": "function",
+        "parameters": [{"name":"createProperties","type":"object","properties":{
+          "windowId":{"type":"integer","minimum":-2,"optional":true},
+          "index":{"type":"integer","minimum":0,"optional":true},
+          "url":{"type":"string","optional":true},
+          "active":{"type":"boolean","optional":true},
+          "selected":{"type":"boolean","optional":true,"deprecated":"Please use active."},
+          "pinned":{"type":"boolean","optional":true},
+          "openerTabId":{"type":"integer","minimum":0,"optional":true}
+        }}],
+        "returns_async":{"name":"callback","optional":true,"parameters":[{"name":"tab","$ref":"Tab"}]}
       },
       {
         "name": "executeScript",
@@ -651,7 +713,6 @@
     "events": [
       {
         "name": "onCreated",
-        "deprecated": "chrome.tabs.onCreated is not current supported in Electron",
         "type": "function",
         "description": "Fired when a tab is created. Note that the tab's URL and tab group membership may not be set at the time this event is fired, but you can listen to onUpdated events so as to be notified when a URL is set or the tab is added to a tab group.",
         "parameters": [
@@ -664,7 +725,6 @@
       },
       {
         "name": "onUpdated",
-        "deprecated": "chrome.tabs.onUpdated is not current supported in Electron",
         "type": "function",
         "description": "Fired when a tab is updated.",
         "parameters": [
@@ -751,7 +811,6 @@
       },
       {
         "name": "onMoved",
-        "deprecated": "chrome.tabs.onMoved is not current supported in Electron",
         "type": "function",
         "description": "Fired when a tab is moved within a window. Only one move event is fired, representing the tab the user directly moved. Move events are not fired for the other tabs that must move in response to the manually-moved tab. This event is not fired when a tab is moved between windows; for details, see $(ref:tabs.onDetached).",
         "parameters": [
@@ -832,7 +891,6 @@
       },
       {
         "name": "onActivated",
-        "deprecated": "chrome.tabs.onActivated is not current supported in Electron",
         "type": "function",
         "description": "Fires when the active tab in a window changes. Note that the tab's URL may not be set at the time this event fired, but you can listen to onUpdated events so as to be notified when a URL is set.",
         "parameters": [
@@ -966,7 +1024,6 @@
       },
       {
         "name": "onRemoved",
-        "deprecated": "chrome.tabs.onRemoved is not current supported in Electron",
         "type": "function",
         "description": "Fired when a tab is closed.",
         "parameters": [
@@ -1012,7 +1069,6 @@
       },
       {
         "name": "onZoomChange",
-        "deprecated": "chrome.tabs.onZoomChange is not current supported in Electron",
         "type": "function",
         "description": "Fired when a tab is zoomed.",
         "parameters": [

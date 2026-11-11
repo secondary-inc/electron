@@ -5,6 +5,7 @@
 #include "shell/renderer/extensions/electron_extensions_renderer_api_provider.h"
 
 #include "chrome/renderer/extensions/api/extension_hooks_delegate.h"
+#include "electron/grit/electron_resources.h"
 #include "chrome/renderer/extensions/api/tabs_hooks_delegate.h"
 #include "extensions/renderer/bindings/api_bindings_system.h"
 #include "extensions/renderer/dispatcher.h"
@@ -40,7 +41,11 @@ void ElectronExtensionsRendererAPIProvider::AddBindingsSystemHooks(
 }
 
 void ElectronExtensionsRendererAPIProvider::PopulateSourceMap(
-    extensions::ResourceBundleSourceMap* source_map) const {}
+    extensions::ResourceBundleSourceMap* source_map) const {
+  source_map->RegisterSource("action", IDR_IRIS_ACTION_BINDINGS);
+  source_map->RegisterSource("browserAction", IDR_IRIS_BROWSER_ACTION_BINDINGS);
+  source_map->RegisterSource("pageAction", IDR_IRIS_PAGE_ACTION_BINDINGS);
+}
 
 void ElectronExtensionsRendererAPIProvider::EnableCustomElementAllowlist()
     const {}

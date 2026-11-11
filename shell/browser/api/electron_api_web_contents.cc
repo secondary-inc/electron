@@ -35,6 +35,9 @@
 #include "base/task/current_thread.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/timer/elapsed_timer.h"
+#include "base/timer/timer.h"
+#include "content/public/browser/weak_document_ptr.h"
+#include "third_party/blink/public/mojom/link_to_text/link_to_text.mojom.h"
 #include "base/unguessable_token.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -67,6 +70,7 @@
 #include "content/public/browser/download_request_utils.h"
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
+#include "content/public/browser/media_session.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_discard_reason.h"
@@ -216,6 +220,8 @@
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/mojom/view_type.mojom.h"
 #include "shell/browser/extensions/electron_extension_web_contents_observer.h"
+#include "shell/browser/extensions/electron_extension_tab_util.h"
+#include "shell/browser/extensions/api/extension_action/extension_action_api.h"
 #endif
 
 #if BUILDFLAG(ENABLE_PRINTING)
@@ -461,6 +467,15 @@ struct Converter<content::NavigationEntry*> {
 }  // namespace gin
 
 namespace electron::api {
+
+struct WebContents::BrowserPipRequest {
+  std::string token;
+  GURL url;
+  content::WeakDocumentPtr document;
+  int window_id = -1;
+  base::RepeatingCallback<bool()> valid;
+  base::OneShotTimer timer;
+};
 
 namespace {
 
@@ -1724,6 +1739,18 @@ content::WebContents* WebContents::OpenURLFromTab(
   if (!weak_this || !web_contents())
     return nullptr;
 
+  auto* initiator = content::RenderFrameHost::FromID(
+      params.source_render_process_id, params.source_render_frame_id);
+  if (!source->GetMutableRendererPrefs()->browser_link_preview_origin.empty() &&
+      initiator == source->GetPrimaryMainFrame() && params.user_gesture &&
+      !params.post_data && params.url.SchemeIsHTTPOrHTTPS() &&
+      ui::PageTransitionCoreTypeIs(params.transition, ui::PAGE_TRANSITION_LINK) &&
+      Emit("will-navigate-link", params.url, params.referrer)) {
+    return nullptr;
+  }
+  if (!weak_this || !web_contents())
+    return nullptr;
+
   content::NavigationController::LoadURLParams load_url_params(params.url);
   load_url_params.referrer = params.referrer;
   load_url_params.transition_type = params.transition;
@@ -2659,6 +2686,13 @@ bool WebContents::EmitNavigationEvent(
   dict.Set("url", url);
   dict.Set("isSameDocument", is_same_document);
   dict.Set("isMainFrame", is_main_frame);
+  dict.Set("hasUserGesture", navigation_handle->HasUserGesture());
+  dict.Set("initiatedByLinkClick", navigation_handle->WasInitiatedByLinkClick());
+  dict.Set("isFormSubmission", navigation_handle->IsFormSubmission());
+  dict.Set("isPost", navigation_handle->IsPost());
+  dict.Set("navigationType", std::string(ui::PageTransitionGetCoreTransitionString(
+                                 navigation_handle->GetPageTransition())));
+  dict.Set("referrer", navigation_handle->GetReferrer());
   dict.Set("processId", frame_process_id);
   dict.Set("routingId", frame_routing_id);
   dict.SetGetter("frame", frame_host);
@@ -3095,6 +3129,14 @@ content::WebContents* WebContents::GetOpenDevToolsWebContents() const {
 }
 
 void WebContents::WebContentsDestroyed() {
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  // Extension-owned contents can outlive their underlying native document.
+  // Cleanup may call this again after Observe(nullptr).
+  if (web_contents() &&
+      extensions::ElectronBrowserTabWindowId(web_contents()) >= 0)
+    extensions::ExtensionActionAPI::Get(web_contents()->GetBrowserContext())
+        ->ClearAllValuesForTab(web_contents());
+#endif
   // Drop this instance's contribution to the process-wide caret browsing count.
   ReconcileCaretBrowsingCount(false);
 
@@ -4459,6 +4501,226 @@ void WebContents::CopyImageAt(int x, int y) {
   auto* const host = web_contents()->GetPrimaryMainFrame();
   if (host)
     host->CopyImageAt(x, y);
+}
+
+void WebContents::SetBrowserTabState(gin_helper::ErrorThrower thrower, bool active,
+                                     int window_id, int index, std::optional<bool> pinned, std::optional<bool> moved, std::optional<int> opener_tab_id) {
+  if (window_id < 1 || index < 0) {
+    thrower.ThrowTypeError("Invalid browser tab window or index");
+    return;
+  }
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  if (opener_tab_id && *opener_tab_id != -1) {
+    auto* opener = extensions::GetElectronTabById(*opener_tab_id, web_contents()->GetBrowserContext());
+    if (!opener || opener == this ||
+        extensions::ElectronBrowserTabWindowId(opener->web_contents()) != window_id ||
+        !opener->owner_window() || opener->owner_window()->base_window_id() != window_id) {
+      thrower.ThrowTypeError("Invalid browser tab opener");
+      return;
+    }
+  }
+  extensions::SetElectronBrowserTabState(web_contents(), active, window_id, index, pinned.value_or(false), moved.value_or(false), opener_tab_id.value_or(-2));
+#else
+  thrower.ThrowError("Extensions are disabled in this runtime");
+#endif
+}
+
+void WebContents::SetBrowserLinkPreviewOrigin(
+    gin_helper::ErrorThrower thrower, const std::string& origin) {
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  if (!web_contents() ||
+      extensions::ElectronBrowserTabWindowId(web_contents()) < 1 ||
+      (!origin.empty() && (!owner_window() ||
+       extensions::ElectronBrowserTabWindowId(web_contents()) !=
+           owner_window()->base_window_id()))) {
+    thrower.ThrowTypeError("Link preview routing requires a managed browser tab");
+    return;
+  }
+  if (!origin.empty() &&
+      (!GURL(origin).SchemeIsHTTPOrHTTPS() ||
+       url::Origin::Create(GURL(origin)).Serialize() != origin)) {
+    thrower.ThrowTypeError("Link preview requires a canonical HTTP origin");
+    return;
+  }
+  auto* prefs = web_contents()->GetMutableRendererPrefs();
+  if (prefs->browser_link_preview_origin == origin)
+    return;
+  prefs->browser_link_preview_origin = origin;
+  web_contents()->SyncRendererPrefs();
+#else
+  thrower.ThrowError("Managed browser tabs are unavailable");
+#endif
+}
+
+v8::Local<v8::Promise> WebContents::GetBrowserTextFragment(v8::Isolate* isolate) {
+  struct Request {
+    explicit Request(v8::Isolate* isolate) : promise(isolate) {}
+    gin_helper::Promise<std::string> promise;
+    mojo::Remote<blink::mojom::TextFragmentReceiver> remote;
+    base::OneShotTimer timer;
+    base::WeakPtr<WebContents> owner;
+    content::WeakDocumentPtr document;
+    GURL url;
+    int window_id = -1;
+    bool done = false;
+    void Finish(const std::string& selector, shared_highlighting::LinkGenerationError error) {
+      if (done) return;
+      done = true;
+      timer.Stop();
+      remote.reset();
+      auto* contents = owner ? owner->web_contents() : nullptr;
+      auto* frame = document.AsRenderFrameHostIfValid();
+      bool valid = contents && frame &&
+          contents->GetPrimaryMainFrame() == frame &&
+          contents->GetLastCommittedURL() == url &&
+          contents->GetVisibility() == content::Visibility::VISIBLE;
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+      valid = valid && owner->owner_window() &&
+          owner->owner_window()->base_window_id() == window_id &&
+          extensions::ElectronBrowserTabWindowId(contents) == window_id;
+#else
+      valid = false;
+#endif
+      if (!valid || error != shared_highlighting::LinkGenerationError::kNone ||
+          selector.empty() || selector.size() > 8192) {
+        promise.RejectWithErrorMessage("Text selection changed or no unique selector is available");
+      } else {
+        promise.Resolve(selector);
+      }
+    }
+  };
+  auto request = std::make_shared<Request>(isolate);
+  auto handle = request->promise.GetHandle();
+  auto* contents = web_contents();
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  const int window_id = contents ? extensions::ElectronBrowserTabWindowId(contents) : -1;
+  if (!contents || window_id < 1 || !owner_window() ||
+      owner_window()->base_window_id() != window_id ||
+      contents->GetVisibility() != content::Visibility::VISIBLE ||
+      !contents->GetLastCommittedURL().SchemeIsHTTPOrHTTPS() ||
+      !contents->GetPrimaryMainFrame()->IsRenderFrameLive()) {
+    request->promise.RejectWithErrorMessage("Text fragments require a visible managed HTTP browser tab");
+    return handle;
+  }
+  request->window_id = window_id;
+#else
+  request->promise.RejectWithErrorMessage("Managed browser tabs are unavailable");
+  return handle;
+#endif
+  request->owner = GetWeakPtr();
+  request->document = contents->GetPrimaryMainFrame()->GetWeakDocumentPtr();
+  request->url = contents->GetLastCommittedURL();
+  contents->GetPrimaryMainFrame()->GetRemoteInterfaces()->GetInterface(
+      request->remote.BindNewPipeAndPassReceiver());
+  request->remote.set_disconnect_handler(base::BindOnce(
+      [](std::shared_ptr<Request> request) {
+        request->Finish("", shared_highlighting::LinkGenerationError::kNoRemoteConnection);
+      }, request));
+  request->timer.Start(FROM_HERE, base::Seconds(5), base::BindOnce(
+      [](std::shared_ptr<Request> request) {
+        request->Finish("", shared_highlighting::LinkGenerationError::kTimeout);
+      }, request));
+  request->remote->RequestSelectorForSelection(base::BindOnce(
+      [](std::shared_ptr<Request> request, const std::string& selector,
+         shared_highlighting::LinkGenerationError error,
+         shared_highlighting::LinkGenerationReadyStatus) {
+        request->Finish(selector, error);
+      }, request));
+  return handle;
+}
+
+bool WebContents::RequestBrowserPictureInPicture(
+    const std::string& url, const std::string& token,
+    base::RepeatingCallback<bool()> valid) {
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  auto* contents = web_contents();
+  if (!contents || !contents->HasPictureInPictureVideo() ||
+      PictureInPictureWindowManager::GetInstance()->GetWebContents() != contents)
+    browser_pip_active_token_.clear();
+  if (!contents || token.empty() || token.size() > 128 || valid.is_null() ||
+      browser_pip_request_ || !browser_pip_active_token_.empty() ||
+      !owner_window() || !owner_window()->IsVisible() ||
+      owner_window()->IsMinimized() || !owner_window()->IsFocused() ||
+      extensions::ElectronBrowserTabWindowId(contents) != owner_window()->base_window_id() ||
+      url.size() > 8192 || !GURL(url).SchemeIsHTTPOrHTTPS() ||
+      contents->GetLastCommittedURL() != GURL(url) ||
+      PictureInPictureWindowManager::GetInstance()->GetWebContents() ||
+      !contents->GetPrimaryMainFrame()->IsRenderFrameLive())
+    return false;
+  auto* session = content::MediaSession::GetIfExists(contents);
+  if (!session || !session->CanEnterBrowserPictureInPicture()) return false;
+  auto request = std::make_unique<BrowserPipRequest>();
+  request->token = token;
+  request->url = contents->GetLastCommittedURL();
+  request->document = contents->GetPrimaryMainFrame()->GetWeakDocumentPtr();
+  request->window_id = owner_window()->base_window_id();
+  request->valid = std::move(valid);
+  request->timer.Start(FROM_HERE, base::Seconds(5),
+      base::BindOnce(&WebContents::CancelBrowserPictureInPicture, GetWeakPtr(), token));
+  browser_pip_request_ = std::move(request);
+  if (!session->RequestBrowserPictureInPicture(token)) {
+    browser_pip_request_.reset();
+    return false;
+  }
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool WebContents::CanStartBrowserPictureInPicture(
+    content::RenderFrameHost* frame, const std::string& token) {
+  if (token.empty()) {
+    // A manual/site request supersedes pending automatic entry, not vice versa.
+    browser_pip_request_.reset();
+    return true;
+  }
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  const auto matches = [&]() {
+    auto* contents = web_contents();
+    return browser_pip_request_ && browser_pip_request_->token == token &&
+        browser_pip_request_->document.AsRenderFrameHostIfValid() == frame &&
+        contents && contents->GetPrimaryMainFrame() == frame &&
+        contents->GetLastCommittedURL() == browser_pip_request_->url &&
+        owner_window() && owner_window()->IsVisible() &&
+        !owner_window()->IsMinimized() && owner_window()->IsFocused() &&
+        owner_window()->base_window_id() == browser_pip_request_->window_id &&
+        extensions::ElectronBrowserTabWindowId(contents) == browser_pip_request_->window_id &&
+        !PictureInPictureWindowManager::GetInstance()->GetWebContents();
+  };
+  if (!matches()) return false;
+  auto weak = GetWeakPtr();
+  auto valid = browser_pip_request_->valid;
+  if (!valid.Run() || !weak) return false;
+  if (!matches()) return false;
+  auto* session = content::MediaSession::GetIfExists(web_contents());
+  return session && session->CanEnterBrowserPictureInPicture();
+#else
+  return false;
+#endif
+}
+
+void WebContents::DidStartBrowserPictureInPicture(
+    content::RenderFrameHost* frame, const std::string& token, bool success) {
+  if (!success) return;
+  browser_pip_active_token_.clear();
+  if (!token.empty() && browser_pip_request_ &&
+      browser_pip_request_->token == token &&
+      browser_pip_request_->document.AsRenderFrameHostIfValid() == frame)
+    browser_pip_active_token_ = token;
+  browser_pip_request_.reset();
+  if (!browser_pip_active_token_.empty())
+    Emit("browser-picture-in-picture-started", token);
+}
+
+void WebContents::CancelBrowserPictureInPicture(const std::string& token) {
+  if (browser_pip_request_ && browser_pip_request_->token == token)
+    browser_pip_request_.reset();
+  if (token.empty() || browser_pip_active_token_ != token) return;
+  browser_pip_active_token_.clear();
+  auto* manager = PictureInPictureWindowManager::GetInstance();
+  if (web_contents() && manager->GetWebContents() == web_contents())
+    manager->ExitPictureInPicture();
 }
 
 void WebContents::Focus() {
@@ -5934,6 +6196,11 @@ void WebContents::FillObjectTemplate(v8::Isolate* isolate,
       .SetMethod<&WebContents::SendInternal>("_sendInternal")
       .SetMethod<&WebContents::PostMessage>("postMessage")
       .SetMethod<&WebContents::SetOwnerBaseWindow>("_setOwnerWindow")
+      .SetMethod<&WebContents::SetBrowserTabState>("setBrowserTabState")
+      .SetMethod<&WebContents::SetBrowserLinkPreviewOrigin>("setBrowserLinkPreviewOrigin")
+      .SetMethod<&WebContents::GetBrowserTextFragment>("getBrowserTextFragment")
+      .SetMethod<&WebContents::RequestBrowserPictureInPicture>("requestBrowserPictureInPicture")
+      .SetMethod<&WebContents::CancelBrowserPictureInPicture>("cancelBrowserPictureInPicture")
       .Build();
 }
 

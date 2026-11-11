@@ -52,7 +52,6 @@ template("electron_repack_percent") {
       "//chrome/app/theme:webui_theme_resources",
       "//chrome/renderer:resources",
     ]
-
     if (enable_electron_extensions) {
       sources += [ "$root_gen_dir/extensions/extensions_browser_resources_${percent}_percent.pak" ]
       deps += [ "//extensions:extensions_browser_resources" ]

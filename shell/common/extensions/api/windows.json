@@ -1,0 +1,309 @@
+// Copyright 2012 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+// Work window queries, focus updates and profile-scoped focus events.
+[
+  {
+    "namespace": "windows",
+    "description": "Use the <code>chrome.windows</code> API to interact with browser windows. You can use this API to create, modify, and rearrange windows in the browser.",
+    "compiler_options": {
+      "implemented_in": "electron/shell/browser/extensions/api/windows/windows_api.h"
+    },
+    "types": [
+      {
+        "id": "WindowType",
+        "type": "string",
+        "description": "The type of browser window this is. In some circumstances a window may not be assigned a <code>type</code> property; for example, when querying closed windows from the $(ref:sessions) API.",
+        "enum": [
+          {
+            "name": "normal",
+            "description": "A normal browser window."
+          },
+          {
+            "name": "popup",
+            "description": "A browser popup."
+          },
+          {
+            "name": "panel",
+            "description": "<i>Deprecated in this API.</i> A Chrome App panel-style window. Extensions can only see their own panel windows."
+          },
+          {
+            "name": "app",
+            "description": "<i>Deprecated in this API.</i> A Chrome App window. Extensions can only see their app own windows."
+          },
+          {
+            "name": "devtools",
+            "description": "A Developer Tools window."
+          },
+          {
+            "name": "custom-tab",
+            "nodoc": true,
+            "description": "An Android custom tab browser window."
+          }
+        ]
+      },
+      {
+        "id": "WindowState",
+        "type": "string",
+        "description": "The state of this browser window. In some circumstances a window may not be assigned a <code>state</code> property; for example, when querying closed windows from the $(ref:sessions) API.",
+        "enum": [
+          {
+            "name": "normal",
+            "description": "Normal window state (not minimized, maximized, or fullscreen)."
+          },
+          {
+            "name": "minimized",
+            "description": "Minimized window state."
+          },
+          {
+            "name": "maximized",
+            "description": "Maximized window state."
+          },
+          {
+            "name": "fullscreen",
+            "description": "Fullscreen window state."
+          },
+          {
+            "name": "locked-fullscreen",
+            "nodoc": true,
+            "description": "Locked fullscreen window state. This fullscreen state cannot be exited by user action and is available only to allowlisted extensions on Chrome OS."
+          }
+        ]
+      },
+      {
+        "id": "Window",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "optional": true,
+            "minimum": 0,
+            "description": "The ID of the window. Window IDs are unique within a browser session. In some circumstances a window may not be assigned an <code>ID</code> property; for example, when querying windows using the $(ref:sessions) API, in which case a session ID may be present."
+          },
+          "focused": {
+            "type": "boolean",
+            "description": "Whether the window is currently the focused window."
+          },
+          "top": {
+            "type": "integer",
+            "optional": true,
+            "description": "The offset of the window from the top edge of the screen in pixels. In some circumstances a window may not be assigned a <code>top</code> property; for example, when querying closed windows from the $(ref:sessions) API."
+          },
+          "left": {
+            "type": "integer",
+            "optional": true,
+            "description": "The offset of the window from the left edge of the screen in pixels. In some circumstances a window may not be assigned a <code>left</code> property; for example, when querying closed windows from the $(ref:sessions) API."
+          },
+          "width": {
+            "type": "integer",
+            "optional": true,
+            "description": "The width of the window, including the frame, in pixels. In some circumstances a window may not be assigned a <code>width</code> property; for example, when querying closed windows from the $(ref:sessions) API."
+          },
+          "height": {
+            "type": "integer",
+            "optional": true,
+            "description": "The height of the window, including the frame, in pixels. In some circumstances a window may not be assigned a <code>height</code> property; for example, when querying closed windows from the $(ref:sessions) API."
+          },
+          "tabs": {
+            "type": "array",
+            "items": {
+              "$ref": "tabs.Tab"
+            },
+            "optional": true,
+            "description": "Array of $(ref:tabs.Tab) objects representing the current tabs in the window."
+          },
+          "incognito": {
+            "type": "boolean",
+            "description": "Whether the window is incognito."
+          },
+          "type": {
+            "$ref": "WindowType",
+            "optional": true,
+            "description": "The type of browser window this is."
+          },
+          "state": {
+            "$ref": "WindowState",
+            "optional": true,
+            "description": "The state of this browser window."
+          },
+          "alwaysOnTop": {
+            "type": "boolean",
+            "description": "Whether the window is set to be always on top."
+          },
+          "sessionId": {
+            "type": "string",
+            "optional": true,
+            "description": "The session ID used to uniquely identify a window, obtained from the $(ref:sessions) API."
+          }
+        }
+      },
+      {
+        "id": "CreateType",
+        "type": "string",
+        "description": "Specifies what type of browser window to create. 'panel' is deprecated and is available only to existing allowlisted extensions on Chrome OS.",
+        "enum": [
+          {
+            "name": "normal",
+            "description": "Specifies the window as a standard window."
+          },
+          {
+            "name": "popup",
+            "description": "Specifies the window as a popup window."
+          },
+          {
+            "name": "panel",
+            "description": "Specifies the window as a panel."
+          }
+        ]
+      },
+      {
+        "id": "QueryOptions",
+        "type": "object",
+        "properties": {
+          "populate": {
+            "type": "boolean",
+            "optional": true,
+            "description": "If true, the $(ref:windows.Window) object has a <var>tabs</var> property that contains a list of the $(ref:tabs.Tab) objects. The <code>Tab</code> objects only contain the <code>url</code>, <code>pendingUrl</code>, <code>title</code>, and <code>favIconUrl</code> properties if the extension's manifest file includes the <code>\"tabs\"</code> permission."
+          },
+          "windowTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "WindowType"
+            },
+            "optional": true,
+            "description": "If set, the $(ref:windows.Window) returned is filtered based on its type. If unset, the default filter is set to <code>['normal', 'popup']</code>."
+          }
+        }
+      }
+    ],
+    "properties": {
+      "WINDOW_ID_NONE": {
+        "value": -1,
+        "description": "The windowId value that represents the absence of a Chrome browser window."
+      },
+      "WINDOW_ID_CURRENT": {
+        "value": -2,
+        "description": "The windowId value that represents the <a href='#the_current_window'>current window</a>."
+      }
+    },
+    "functions": [
+      {
+        "name": "get",
+        "type": "function",
+        "description": "Gets details about a window.",
+        "parameters": [
+          {
+            "type": "integer",
+            "name": "windowId",
+            "minimum": -2
+          },
+          {
+            "name": "queryOptions",
+            "$ref": "QueryOptions",
+            "optional": true
+          }
+        ],
+        "returns_async": {
+          "name": "callback",
+          "parameters": [
+            {
+              "name": "window",
+              "$ref": "Window"
+            }
+          ]
+        }
+      },
+      {
+        "name": "getCurrent",
+        "type": "function",
+        "description": "Gets the <a href='#current-window'>current window</a>.",
+        "parameters": [
+          {
+            "name": "queryOptions",
+            "$ref": "QueryOptions",
+            "optional": true
+          }
+        ],
+        "returns_async": {
+          "name": "callback",
+          "parameters": [
+            {
+              "name": "window",
+              "$ref": "Window"
+            }
+          ]
+        }
+      },
+      {
+        "name": "getAll",
+        "type": "function",
+        "description": "Gets all windows.",
+        "parameters": [
+          {
+            "name": "queryOptions",
+            "$ref": "QueryOptions",
+            "optional": true
+          }
+        ],
+        "returns_async": {
+          "name": "callback",
+          "parameters": [
+            {
+              "name": "windows",
+              "type": "array",
+              "items": {
+                "$ref": "Window"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "update",
+        "type": "function",
+        "description": "Updates a managed browser window's focused state. Other window mutations are not implemented.",
+        "parameters": [
+          {"name": "windowId", "type": "integer"},
+          {"name": "updateInfo", "type": "object", "properties": {
+            "focused": {"type": "boolean", "optional": true}
+          }}
+        ],
+        "returns_async": {
+          "name": "callback", "optional": true,
+          "parameters": [{"name": "window", "$ref": "Window"}]
+        }
+      },
+      {
+        "name": "getLastFocused",
+        "type": "function",
+        "description": "Gets the most recently focused managed browser window in the calling profile.",
+        "parameters": [
+          {
+            "name": "queryOptions",
+            "$ref": "QueryOptions",
+            "optional": true
+          }
+        ],
+        "returns_async": {
+          "name": "callback",
+          "parameters": [
+            {
+              "name": "window",
+              "$ref": "Window"
+            }
+          ]
+        }
+      }
+    ],
+    "events": [{
+      "name": "onFocusChanged",
+      "type": "function",
+      "description": "Fired when a managed browser window in this profile gains focus, or WINDOW_ID_NONE when it loses focus.",
+      "filters": [{
+        "name": "windowTypes", "type": "array",
+        "items": {"$ref": "WindowType"}
+      }],
+      "parameters": [{"type": "integer", "name": "windowId", "minimum": -1}]
+    }]
+  }
+]

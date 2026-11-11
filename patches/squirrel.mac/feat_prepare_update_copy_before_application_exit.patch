@@ -1,0 +1,106 @@
+diff --git a/Squirrel/SQRLInstaller+Private.h b/Squirrel/SQRLInstaller+Private.h
+index 1ab932c..aa9378c 100644
+--- a/Squirrel/SQRLInstaller+Private.h
++++ b/Squirrel/SQRLInstaller+Private.h
+@@ -15,3 +15,11 @@ extern NSString * const SQRLInstallerOwnedBundleKey;
+ // The defaults key to store the number of installation attempts that have been
+ // made.
+ extern NSString * const SQRLShipItInstallationAttemptsKey;
++
++@class RACSignal;
++@class SQRLShipItRequest;
++@interface SQRLInstaller (BackgroundPreparation)
++// Copies into installer-owned storage without modifying the running application.
++// Installation still validates the request and rechecks the copy's signature.
++- (RACSignal *)prepareUpdateWhileRunning:(SQRLShipItRequest *)request;
++@end
+diff --git a/Squirrel/SQRLInstaller.m b/Squirrel/SQRLInstaller.m
+index 6a4e821..9e5b55a 100644
+--- a/Squirrel/SQRLInstaller.m
++++ b/Squirrel/SQRLInstaller.m
+@@ -54,6 +54,8 @@ NSString * const SQRLInstallerOwnedBundleKey = @"SQRLInstallerOwnedBundle";
+ // Stores the bundle moved aside by an install request so that the original
+ // bundle can be restored to its original location if needed.
+ @property (atomic, strong) SQRLInstallerOwnedBundle *ownedBundle;
++@property (atomic, strong) NSURL *preparedBundleURL;
++@property (atomic, strong) SQRLShipItRequest *preparedRequest;
+ 
+ // Reads the given key from `request`, failing if it's not set.
+ //
+@@ -244,6 +246,41 @@ NSString * const SQRLInstallerOwnedBundleKey = @"SQRLInstallerOwnedBundle";
+ 
+ #pragma mark Installer States
+ 
++- (RACSignal *)prepareUpdateWhileRunning:(SQRLShipItRequest *)request {
++	// Use only private temporary storage. Never rename or write the installed app.
++	return [[[self prepareAndValidateUpdateBundleURLForRequest:request]
++		doNext:^(NSURL *bundleURL) {
++			self.preparedBundleURL = bundleURL;
++			self.preparedRequest = request;
++			NSLog(@"Background update copy prepared");
++		}] ignoreValues];
++}
++
++- (RACSignal *)preparedUpdateForRequest:(SQRLShipItRequest *)request {
++	NSURL *bundleURL = self.preparedBundleURL;
++	SQRLShipItRequest *prepared = self.preparedRequest;
++	self.preparedBundleURL = nil;
++	self.preparedRequest = nil;
++	BOOL matches = bundleURL != nil &&
++		[prepared.updateBundleURL isEqual:request.updateBundleURL] &&
++		[prepared.targetBundleURL.URLByStandardizingPath.path isEqual:request.targetBundleURL.URLByStandardizingPath.path] &&
++		[prepared.bundleIdentifier isEqual:request.bundleIdentifier] &&
++		prepared.useUpdateBundleName == request.useUpdateBundleName;
++	if (!matches) {
++		if (bundleURL != nil) {
++			return [[[self deleteOwnedBundleAtURL:bundleURL] catchTo:[RACSignal empty]]
++				then:^{ return [self prepareAndValidateUpdateBundleURLForRequest:request]; }];
++		}
++		return [self prepareAndValidateUpdateBundleURLForRequest:request];
++	}
++	// The app may have stayed open for hours. Never trust the cached verification.
++	return [[self codeSignatureForBundleAtURL:request.targetBundleURL]
++		flattenMap:^(SQRLCodeSignature *signature) {
++			return [[[self verifyBundleAtURL:bundleURL usingSignature:signature]
++				ignoreValues] concat:[RACSignal return:bundleURL]];
++		}];
++}
++
+ - (RACSignal *)prepareAndValidateUpdateBundleURLForRequest:(SQRLShipItRequest *)request {
+ 	NSParameterAssert(request != nil);
+ 
+@@ -353,7 +390,7 @@ NSString * const SQRLInstallerOwnedBundleKey = @"SQRLInstallerOwnedBundle";
+ 	}
+ 
+ 	return [[[[self
+-		prepareAndValidateUpdateBundleURLForRequest:request]
++		preparedUpdateForRequest:request]
+ 		flattenMap:^(NSURL *updateBundleURL) {
+ 			return [[[[self
+ 				renameIfNeeded:request updateBundleURL:updateBundleURL]
+diff --git a/Squirrel/ShipIt-main.m b/Squirrel/ShipIt-main.m
+index e26c0f1..a7546a2 100644
+--- a/Squirrel/ShipIt-main.m
++++ b/Squirrel/ShipIt-main.m
+@@ -101,14 +101,19 @@ static RACSignal *waitForTerminationIfNecessary(SQRLShipItRequest *request) {
+ }
+ 
+ static void installRequest(RACSignal *readRequestSignal, NSString *applicationIdentifier) {
++	SQRLInstaller *installer = [[SQRLInstaller alloc] initWithApplicationIdentifier:applicationIdentifier];
+ 	[[[[[readRequestSignal
+ 		flattenMap:^(SQRLShipItRequest *request) {
+-			return waitForTerminationIfNecessary(request);
++			return [[[installer prepareUpdateWhileRunning:request]
++				catch:^(NSError *error) {
++					NSLog(@"Background update preparation failed; retrying after termination: %@", error);
++					return [RACSignal empty];
++				}]
++				then:^{ return waitForTerminationIfNecessary(request); }];
+ 		}]
+ 		ignoreValues]
+ 		concat:readRequestSignal]
+ 		flattenMap:^(SQRLShipItRequest *request) {
+-			SQRLInstaller *installer = [[SQRLInstaller alloc] initWithApplicationIdentifier:applicationIdentifier];
+ 
+ 			NSUInteger attempt = installationAttempts(applicationIdentifier) + 1;
+ 			setInstallationAttempts(applicationIdentifier, attempt);
