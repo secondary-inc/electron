@@ -15,6 +15,7 @@
 #include "extensions/common/core_extensions_api_provider.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/features/simple_feature.h"
+#include "extensions/common/mojom/context_type.mojom.h"
 #include "extensions/common/permissions/permission_message_provider.h"
 #include "extensions/common/url_pattern_set.h"
 #include "shell/common/application_info.h"
@@ -41,7 +42,7 @@ bool IsOfficialWebStoreContext(
     const extensions::ContextData& context_data) {
   return !extension && context == extensions::mojom::ContextType::kWebPage &&
          url.is_valid() && url.SchemeIs("https") &&
-         url.host_piece() == "chromewebstore.google.com" &&
+         url.host() == "chromewebstore.google.com" &&
          url.EffectiveIntPort() == 443 && !url.has_username() &&
          !url.has_password();
 }

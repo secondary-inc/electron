@@ -63,6 +63,7 @@ ElectronExtensionSystem::ElectronExtensionSystem(
       browser_context, store_factory_, StateStore::BackendType::RULES, false);
   dynamic_user_scripts_store_ = std::make_unique<StateStore>(
       browser_context, store_factory_, StateStore::BackendType::SCRIPTS, false);
+  dynamic_user_scripts_store_->RegisterKey(scripting::kRegisteredScriptsStorageKey);
 }
 
 ElectronExtensionSystem::~ElectronExtensionSystem() = default;
@@ -96,9 +97,6 @@ void ElectronExtensionSystem::InitForRegularProfile(bool extensions_enabled) {
   service_worker_manager_ =
       std::make_unique<ServiceWorkerManager>(browser_context_);
   quota_service_ = std::make_unique<QuotaService>();
-  dynamic_user_scripts_store_ = std::make_unique<StateStore>(
-      browser_context_, store_factory_, StateStore::BackendType::SCRIPTS, false);
-  dynamic_user_scripts_store_->RegisterKey(scripting::kRegisteredScriptsStorageKey);
   user_script_manager_ = std::make_unique<UserScriptManager>(browser_context_);
   app_sorting_ = std::make_unique<NullAppSorting>();
   extension_loader_ =

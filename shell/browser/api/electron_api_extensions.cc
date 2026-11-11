@@ -28,8 +28,8 @@
 #include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "extensions/common/api/commands/commands_handler.h"
 #include "shell/browser/extensions/api/commands/commands_api.h"
-#include "shell/browser/extensions/api/permissions/permissions_api_helpers.h"
-#include "shell/common/extensions/api/permissions.h"
+#include "extensions/browser/api/permissions/permissions_api_helpers.h"
+#include "extensions/common/api/permissions.h"
 
 #include "chrome/browser/browser_process.h"
 #include "extensions/browser/extension_registry.h"

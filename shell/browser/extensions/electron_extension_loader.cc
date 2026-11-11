@@ -24,6 +24,7 @@
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/browser/extension_file_task_runner.h"
+#include "extensions/browser/ruleset_parse_result.h"
 #include "extensions/browser/api/declarative_net_request/install_index_helper.h"
 #include "extensions/browser/extension_pref_names.h"
 #include "extensions/browser/extension_prefs.h"
@@ -87,8 +88,9 @@ ElectronExtensionLoadResult LoadUnpacked(
   // This runs on the extension file task runner, never the UI thread.
   auto indexed = declarative_net_request::InstallIndexHelper::
       IndexAndPersistRulesOnInstall(*extension);
-  if (!indexed.has_value())
-    return {nullptr, indexed.error(), {}};
+  if (indexed.error)
+    return {nullptr, std::move(*indexed.error), {}};
+  extension->AddInstallWarnings(std::move(indexed.warnings));
 
   std::string warnings;
   // Log warnings.
@@ -115,7 +117,7 @@ ElectronExtensionLoadResult LoadUnpacked(
     }
   }
 
-  return {extension, std::move(warnings), std::move(indexed).value()};
+  return {extension, std::move(warnings), std::move(indexed.ruleset_install_prefs)};
 }
 
 }  // namespace
