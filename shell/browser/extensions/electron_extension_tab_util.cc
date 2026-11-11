@@ -174,7 +174,8 @@ class BrowserTabFrames : public base::SupportsUserData::Data,
   void DidUpdateAudioMutingState(bool) override { Updated(); }
   void OnAudioStateChanged(bool) override { Updated(); }
   void DidUpdateFaviconURL(content::RenderFrameHost* frame,
-      const std::vector<blink::mojom::FaviconURLPtr>& candidates) override {
+      const std::vector<blink::mojom::FaviconURLPtr>& candidates,
+      blink::mojom::FaviconUpdateReason reason) override {
     if (frame != web_contents()->GetPrimaryMainFrame()) return;
     favicon_ = PickFavicon(candidates);
     Updated();
