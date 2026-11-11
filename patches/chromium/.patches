@@ -247,3 +247,4 @@ fix_scripting_update_persistence.patch
 fix_disabled_dynamic_script_restore.patch
 fix_extension_subframe_embedder_tab_identity.patch
 fix_apple_install_name_linkedit_alignment.patch
+fix_renderer_close_unload.patch

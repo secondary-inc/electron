@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Iris <dev@iris.local>
+Date: Wed, 11 Nov 2026 08:00:00 +0000
+Subject: fix: run unload on renderer-requested close
+
+DOMWindow::Close dispatches beforeunload but CloseSoon requests browser
+closure without dispatching unload. Retain renderer source checks and
+Chromium's bounded ClosePage acknowledgement instead of skipping unload.
+
+diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
+--- a/content/browser/renderer_host/render_frame_host_impl.cc
++++ b/content/browser/renderer_host/render_frame_host_impl.cc
+@@ -7707,5 +7707,5 @@ void RenderFrameHostImpl::RequestClose() {
+ 
+-  // If the renderer is telling us to close, it has already run the unload
+-  // events, and we can take the fast path.
+-  ClosePageIgnoringUnloadEvents(ClosePageSource::kRenderer);
++  // DOMWindow::Close runs beforeunload, but Page::CloseSoon only requests
++  // browser closure. Run unload before acknowledging the page as closed.
++  ClosePage(ClosePageSource::kRenderer);
+ }
