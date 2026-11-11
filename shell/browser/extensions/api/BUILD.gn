@@ -39,6 +39,7 @@ function_registration("api_registration") {
   # actual headers are listed in "inputs" instead.
   custom_impl_schemas = [
     "action",
+    "browser_action",
     "extension",
   ]
   inputs = [
