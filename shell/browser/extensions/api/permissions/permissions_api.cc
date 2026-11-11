@@ -10,7 +10,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
-#include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/permissions/permissions_updater.h"
 #include "extensions/browser/extension_system.h"
@@ -27,21 +26,8 @@
 #include "extensions/common/api/permissions.h"
 
 namespace extensions {
-namespace {
-void DispatchPermissionChange(content::BrowserContext* context,
-                              const Extension* extension,
-                              const PermissionSet& changed, bool added) {
-  if (!context || changed.IsEmpty() ||
-      ExtensionRegistry::Get(context)->enabled_extensions().GetByID(extension->id()) != extension)
-    return;
-  auto packed = permissions_api_helpers::PackPermissionSet(changed);
-  base::ListValue args;
-  args.Append(packed->ToValue());
-  EventRouter::Get(context)->DispatchEventToExtension(extension->id(),
-      std::make_unique<Event>(added ? events::PERMISSIONS_ON_ADDED : events::PERMISSIONS_ON_REMOVED,
-          added ? "permissions.onAdded" : "permissions.onRemoved", std::move(args), context));
-}
-}  // namespace
+// Chromium's PermissionsEventRouter observes permission updates and dispatches
+// events. Keep Iris consent handling here without emitting duplicate events.
 
 ExtensionFunction::ResponseAction ElectronPermissionsContainsFunction::Run() {
   auto params = api::permissions::Contains::Params::Create(args());
@@ -114,13 +100,10 @@ ExtensionFunction::ResponseAction ElectronPermissionsRequestFunction::Run() {
         }
         auto changed = PermissionSet::CreateDifference(
             *requested, function->extension()->permissions_data()->active_permissions());
-        auto notify = changed->Clone();
         PermissionsUpdater(context).GrantOptionalPermissions(*function->extension(), *changed,
-            base::BindOnce([](scoped_refptr<ElectronPermissionsRequestFunction> function,
-                              std::unique_ptr<const PermissionSet> changed) {
-              DispatchPermissionChange(function->browser_context(), function->extension(), *changed, true);
+            base::BindOnce([](scoped_refptr<ElectronPermissionsRequestFunction> function) {
               function->Respond(function->ArgumentList(api::permissions::Request::Results::Create(true)));
-            }, function, std::move(notify)));
+            }, function));
       }, scoped_refptr<ElectronPermissionsRequestFunction>(this), std::move(missing)));
   auto respond = base::BindRepeating([](scoped_refptr<Pending> pending, bool allow) {
     if (pending->data) std::move(pending->data).Run(allow);
@@ -151,18 +134,15 @@ ExtensionFunction::ResponseAction ElectronPermissionsRemoveFunction::Run() {
                           std::move(unpacked->optional_explicit_hosts), URLPatternSet());
   auto changed = PermissionSet::CreateIntersection(
       requested, extension()->permissions_data()->active_permissions());
-  auto notify = changed->Clone();
   if (requested.HasAPIPermission(mojom::APIPermissionID::kUserScripts)) {
     ExtensionSystem::Get(browser_context())->user_script_manager()
         ->SetUserScriptPrefEnabled(extension_id(), false);
   }
   PermissionsUpdater(browser_context()).RevokeOptionalPermissions(
       *extension(), *changed, PermissionsUpdater::RemoveType::kSoft,
-      base::BindOnce([](scoped_refptr<ElectronPermissionsRemoveFunction> function,
-                        std::unique_ptr<const PermissionSet> changed) {
-        DispatchPermissionChange(function->browser_context(), function->extension(), *changed, false);
+      base::BindOnce([](scoped_refptr<ElectronPermissionsRemoveFunction> function) {
         function->Respond(function->ArgumentList(api::permissions::Remove::Results::Create(true)));
-      }, scoped_refptr<ElectronPermissionsRemoveFunction>(this), std::move(notify)));
+      }, scoped_refptr<ElectronPermissionsRemoveFunction>(this)));
   return did_respond() ? AlreadyResponded() : RespondLater();
 }
 

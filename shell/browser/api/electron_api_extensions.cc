@@ -289,12 +289,6 @@ v8::Local<v8::Promise> Extensions::RevokeOptionalPermissions(
       *optional, extensions::PermissionsParser::GetRequiredPermissions(extension));
   // Removal is exact-pattern subtraction. Include concrete grants made under
   // broad optional declarations, but never subtract required patterns.
-  auto changed = extensions::PermissionSet::CreateIntersection(
-      *optional, extension->permissions_data()->active_permissions(),
-      extensions::URLPatternSet::IntersectionBehavior::kStringComparison);
-  base::ListValue args;
-  args.Append(extensions::permissions_api_helpers::PackPermissionSet(*changed)->ToValue());
-  const bool notify = !changed->IsEmpty();
   if (optional->HasAPIPermission(extensions::mojom::APIPermissionID::kUserScripts)) {
     extensions::ExtensionSystem::Get(browser_context())->user_script_manager()
         ->SetUserScriptPrefEnabled(extension_id, false);
@@ -302,20 +296,10 @@ v8::Local<v8::Promise> Extensions::RevokeOptionalPermissions(
   // Hard removal also forgets inactive optional grants remembered by soft removal.
   extensions::PermissionsUpdater(browser_context()).RevokeOptionalPermissions(
       *extension, *optional, extensions::PermissionsUpdater::RemoveType::kHard,
-      base::BindOnce([](gin_helper::Promise<void> promise,
-                        content::BrowserContext* context,
-                        scoped_refptr<const extensions::Extension> extension,
-                        base::ListValue args, bool notify) {
-        if (notify && extensions::ExtensionRegistry::Get(context)
-                          ->enabled_extensions().GetByID(extension->id()) == extension.get()) {
-          extensions::EventRouter::Get(context)->DispatchEventToExtension(
-              extension->id(), std::make_unique<extensions::Event>(
-                  extensions::events::PERMISSIONS_ON_REMOVED, "permissions.onRemoved",
-                  std::move(args), context));
-        }
+      // Chromium's permission event router sends the single removal event.
+      base::BindOnce([](gin_helper::Promise<void> promise) {
         promise.Resolve();
-      }, std::move(promise), browser_context(),
-      scoped_refptr<const extensions::Extension>(extension), std::move(args), notify));
+      }, std::move(promise)));
   return handle;
 }
 
