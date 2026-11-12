@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Iris <dev@iris.local>
+Subject: Avoid duplicate video metrics for redelivered BeginFrames
+
+Consume repeated MISSED frame feedback without merging two compositor-only
+results. A decoded-video regression reproduces the FrameInfo DCHECK before
+this change, including feedback delivered on the repeated frame itself.
+
+diff --git a/third_party/blink/renderer/platform/graphics/video_frame_submitter.cc b/third_party/blink/renderer/platform/graphics/video_frame_submitter.cc
+index 56f7bfc9a0..745070559b 100644
+--- a/third_party/blink/renderer/platform/graphics/video_frame_submitter.cc
++++ b/third_party/blink/renderer/platform/graphics/video_frame_submitter.cc
+@@ -394,6 +394,7 @@ void VideoFrameSubmitter::OnBeginFrame(
+   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+   TRACE_EVENT0("media", "VideoFrameSubmitter::OnBeginFrame");
+ 
++  const bool repeated_frame = last_begin_frame_args_.frame_id == args.frame_id;
+   last_begin_frame_args_ = args;
+ 
+   Vector<uint32_t> frame_tokens;
+@@ -494,6 +495,16 @@ void VideoFrameSubmitter::OnBeginFrame(
+     }
+   }
+ 
++  // Viz can redeliver a BeginFrame as MISSED to send acknowledgements or
++  // presentation feedback after rendering stops. Process that feedback above,
++  // but do not register a second compositor result for the same frame: the
++  // sorter only merges distinct main-thread and compositor contributions.
++  if (repeated_frame) {
++    compositor_frame_sink_->DidNotProduceFrame(viz::BeginFrameAck(args, false));
++    roughness_reporter_->ProcessFrameWindow();
++    return;
++  }
++
+   const base::TimeDelta vsync_interval = args.unthrottled_interval.is_positive()
+                                              ? args.unthrottled_interval
+                                              : args.interval;
+diff --git a/third_party/blink/renderer/platform/graphics/video_frame_submitter_test.cc b/third_party/blink/renderer/platform/graphics/video_frame_submitter_test.cc
+index e6842ad155..6b0d8c213e 100644
+--- a/third_party/blink/renderer/platform/graphics/video_frame_submitter_test.cc
++++ b/third_party/blink/renderer/platform/graphics/video_frame_submitter_test.cc
+@@ -1361,6 +1361,63 @@ TEST_F(VideoFrameSubmitterTest, OpaqueFramesNotifyEmbedder) {
+   DrainMainThread();
+ }
+ 
++// A visibility change can redeliver the current BeginFrame as MISSED while
++// presentation feedback for its submitted video is still outstanding.
++TEST_F(VideoFrameSubmitterTest, RepeatedMissedBeginFrameBeforePresentation) {
++  EXPECT_CALL(*sink_, SetNeedsBeginFrame(true));
++  submitter_->StartRendering();
++  DrainMainThread();
++
++  auto frame = media::VideoFrame::CreateFrame(
++      media::PIXEL_FORMAT_YV12, gfx::Size(8, 8), gfx::Rect(8, 8),
++      gfx::Size(8, 8), base::TimeDelta());
++  frame->metadata().decode_end_time = base::TimeTicks::Now();
++  uint32_t submitted_token = 0;
++  EXPECT_CALL(*video_frame_provider_, UpdateCurrentFrame(_, _))
++      .WillOnce(Return(true));
++  EXPECT_CALL(*video_frame_provider_, GetCurrentFrame()).WillOnce(Return(frame));
++  EXPECT_CALL(*video_frame_provider_, PutCurrentFrame());
++  EXPECT_CALL(*sink_, DoSubmitCompositorFrame(_, _))
++      .WillOnce([&submitted_token](const viz::LocalSurfaceId&,
++                                  viz::CompositorFrame* submitted) {
++        submitted_token = submitted->metadata.frame_token;
++      });
++  EXPECT_CALL(*resource_provider_, AppendQuads(_, _, _, _));
++  EXPECT_CALL(*resource_provider_, PrepareSendToParent(_));
++  EXPECT_CALL(*resource_provider_, ReleaseFrameResources());
++
++  auto args = begin_frame_source_->CreateBeginFrameArgs(BEGINFRAME_FROM_HERE,
++                                                       now_src_.get());
++  OnBeginFrame(args, {}, {});
++  DrainMainThread();
++
++  auto missed = args;
++  missed.type = viz::BeginFrameArgs::MISSED;
++  EXPECT_CALL(*sink_, DidNotProduceFrame(_));
++  OnBeginFrame(missed, {}, {});
++  DrainMainThread();
++
++  HashMap<uint32_t, viz::FrameTimingDetails> timing_details;
++  viz::FrameTimingDetails details;
++  details.presentation_feedback.timestamp = base::TimeTicks::Now();
++  details.presentation_feedback.flags = gfx::PresentationFeedback::kHWCompletion;
++  timing_details.Set(submitted_token, details);
++  EXPECT_CALL(*video_frame_provider_, OnFramePresented).Times(1);
++  EXPECT_CALL(*sink_, DidNotProduceFrame(_)).Times(2);
++  OnBeginFrame(missed, timing_details, {});
++  DrainMainThread();
++  OnBeginFrame(missed, {}, {});
++  DrainMainThread();
++
++  EXPECT_CALL(*video_frame_provider_, UpdateCurrentFrame(_, _))
++      .WillOnce(Return(false));
++  EXPECT_CALL(*sink_, DidNotProduceFrame(_));
++  auto next = begin_frame_source_->CreateBeginFrameArgs(BEGINFRAME_FROM_HERE,
++                                                       now_src_.get());
++  OnBeginFrame(next, {}, {});
++  DrainMainThread();
++}
++
+ // Uses MOCK_TIME so base::TimeTicks::Now() is controlled for display-time and
+ // vsync tests. Friendship with VideoFrameSubmitter is not inherited from the
+ // base fixture, so this derived type remains a friend in
